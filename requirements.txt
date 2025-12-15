@@ -1,1 +1,3 @@
 Flask
+Pillow
+reverse_geocoder

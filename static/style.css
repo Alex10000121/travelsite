@@ -1,0 +1,106 @@
+/* GRUNDLAGEN */
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    background-color: #1a1a1a;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden; /* Kein Scrollbalken */
+}
+
+/* CONTAINER */
+.app-container {
+    display: flex;
+    flex-direction: column; /* Standard: Untereinander (Handy) */
+    height: 100vh;
+    width: 100vw;
+}
+
+/* FOTO BEREICH (Handy: Oben) */
+#photo-viewer {
+    flex: 0 0 45vh; /* Handy: Nimmt 45% der Höhe */
+    position: relative;
+    background-color: #111;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-bottom: 2px solid #e63946;
+    overflow: hidden;
+}
+
+#current-photo {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain; /* Bild passt sich immer perfekt ein */
+    display: block;
+}
+
+/* MAP BEREICH (Handy: Unten) */
+#map {
+    flex: 1; /* Nimmt den restlichen Platz */
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+/* UI ELEMENTE (Buttons & Text) */
+.photo-info {
+    position: absolute;
+    bottom: 15px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    color: #eee;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.nav-btn {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 15%; /* Große Klickfläche an den Seiten */
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 3rem;
+    cursor: pointer;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, color 0.2s;
+}
+
+.nav-btn:hover {
+    background: rgba(0, 0, 0, 0.2);
+    color: #fff;
+}
+
+.nav-prev { left: 0; }
+.nav-next { right: 0; }
+
+
+/* --- DESKTOP MODUS (ab 768px Breite) --- */
+@media (min-width: 768px) {
+
+    .app-container {
+        flex-direction: row; /* NEU: Nebeneinander! */
+    }
+
+    #photo-viewer {
+        flex: 0 0 50%; /* Nimmt 50% der Breite (Links) */
+        height: 100vh; /* Volle Höhe */
+        border-bottom: none;
+        border-right: 2px solid #e63946;
+    }
+
+    #map {
+        flex: 1; /* Restliche 50% (Rechts) */
+        height: 100vh;
+    }
+}
