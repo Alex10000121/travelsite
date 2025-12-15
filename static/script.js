@@ -89,7 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if(capEl) capEl.innerText = `${dateStr} | ${locationStr} (${currentIndex + 1}/${allPhotos.length})`;
 
         // Map Update
-        map.flyTo([photo.lat, photo.lon], 13);
+        map.flyTo([photo.lat, photo.lon], 12);
 
         // Marker Styling
         mapMarkers.forEach((m, idx) => {
