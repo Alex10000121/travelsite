@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Travelsite{% endblock %}
+{% block title %}Meine Reise-Statistik{% endblock %}
 
 {% block head %}
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -38,6 +38,7 @@
             </button>
 
             <div class="photo-wrapper">
+                <img id="bg-photo" src="" alt="" onerror="this.style.display='none'">
                 <img id="current-photo" src="" alt="" onerror="this.style.display='none'">
             </div>
 

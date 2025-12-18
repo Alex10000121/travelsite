@@ -6,10 +6,7 @@
     --accent-hover: #2563eb;
     --text-main: #ffffff;
     --text-muted: #a3a3a3;
-
-    /* Radius für Desktop & Mobile */
     --radius: 20px;
-
     --shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 
@@ -33,7 +30,7 @@ body, html {
 
 /* ================= LINKER BEREICH (Galerie) ================= */
 .gallery-panel {
-    background: var(--bg-color); /* Hintergrund sichtbar machen */
+    background: var(--bg-color);
     position: relative;
     display: flex;
     flex-direction: column;
@@ -44,132 +41,78 @@ body, html {
 
 .photo-wrapper {
     position: relative;
-    /* Desktop Größe */
     width: 96%;
-    height: 94%;
-
+    height: 94%; /* Desktop: Viel Platz nutzen */
     display: flex;
     justify-content: center;
     align-items: center;
     background: #000;
-
-    /* Runde Ecken */
     border-radius: var(--radius);
-
     overflow: hidden;
     box-shadow: var(--shadow);
 }
 
-#current-photo {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    transition: opacity 0.3s ease;
-    user-select: none;
-    pointer-events: none;
+/* AMBIENT BLUR IM HINTERGRUND */
+#bg-photo {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    filter: blur(20px) brightness(0.6);
+    z-index: 1;
+    transform: scale(1.1); /* Ränder abschneiden */
 }
 
-/* Info Leiste (Unten) */
+/* HAUPTBILD */
+#current-photo {
+    position: relative;
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+    z-index: 2;
+    transition: opacity 0.3s ease;
+    user-select: none; pointer-events: none;
+    box-shadow: 0 0 20px rgba(0,0,0,0.3);
+}
+
+/* Info Leiste */
 .info-overlay {
     position: absolute;
-    bottom: 40px; /* Etwas höher, damit es im Bild schwebt */
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(12px);
-    padding: 10px 20px;
-    border-radius: 30px;
-    text-align: center;
-    min-width: 200px;
+    bottom: 40px;
+    left: 50%; transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(12px);
+    padding: 10px 20px; border-radius: 30px;
+    text-align: center; min-width: 200px;
     border: 1px solid rgba(255,255,255,0.1);
-    z-index: 25;
-    pointer-events: none; /* Klicks gehen durch */
+    z-index: 25; pointer-events: none;
 }
 .info-overlay h2 { margin: 0; font-size: 1rem; }
 .info-overlay p { margin: 2px 0 0 0; font-size: 0.8rem; color: var(--text-muted); }
 
 /* ================= HEADER BUTTONS ================= */
 .info-btn {
-    position: absolute;
-    top: 30px;
+    position: absolute; top: 30px;
     width: 45px; height: 45px;
     background: rgba(255,255,255,0.1);
     border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 50%;
-    color: var(--text-main);
-    cursor: pointer;
-    display: flex; justify-content: center; align-items: center;
-    transition: all 0.2s ease;
-    z-index: 50;
-    backdrop-filter: blur(4px);
+    border-radius: 50%; color: var(--text-main);
+    cursor: pointer; display: flex; justify-content: center; align-items: center;
+    transition: all 0.2s ease; z-index: 50; backdrop-filter: blur(4px);
 }
-.info-btn:hover {
-    background: var(--accent-color);
-    border-color: var(--accent-color);
-    transform: scale(1.1);
-}
-.info-btn svg {
-    width: 24px; height: 24px;
-    fill: none; stroke: currentColor; stroke-width: 2.5;
-    stroke-linecap: round; stroke-linejoin: round;
-}
+.info-btn:hover { background: var(--accent-color); border-color: var(--accent-color); transform: scale(1.1); }
+.info-btn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 
-/* Positionierung */
 .help-pos  { left: 30px; }
 .stats-pos { right: 30px; }
 
-/* ================= MODALS ================= */
-.modal-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.8); backdrop-filter: blur(8px);
+/* ================= KARTE ================= */
+.map-panel {
+    height: 100%; width: 100%;
     display: flex; justify-content: center; align-items: center;
-    opacity: 0; visibility: hidden; transition: all 0.3s ease;
-    z-index: 1000;
+    background: var(--bg-color);
 }
-.modal-overlay.show { opacity: 1; visibility: visible; }
-
-.modal-content {
-    background: #1e1e1e; padding: 30px;
+#map {
+    width: 96%; height: 94%;
     border-radius: var(--radius);
-    width: 85%; max-width: 450px; text-align: center;
-    border: 1px solid rgba(255,255,255,0.1);
-    box-shadow: 0 20px 50px rgba(0,0,0,0.8);
-    position: relative;
-    transform: translateY(20px); transition: transform 0.3s ease;
-}
-.modal-overlay.show .modal-content { transform: translateY(0); }
-
-.close-modal {
-    position: absolute; top: 15px; right: 20px;
-    background: none; border: none; color: #666; font-size: 2rem;
-    cursor: pointer; transition: color 0.2s;
-}
-.close-modal:hover { color: #fff; }
-
-.modal-content h3 { font-size: 1.4rem; margin-bottom: 25px; font-weight: 300; }
-
-/* Statistik Grid */
-.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-.stat-box { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 15px; }
-.stat-value { display: block; font-size: 1.6rem; font-weight: 800; color: var(--accent-color); }
-.stat-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
-
-/* Tutorial Styles */
-.tutorial-steps { display: grid; grid-template-columns: 1fr; gap: 20px; margin: 20px 0; text-align: center; }
-.step-box { display: flex; flex-direction: row; align-items: center; text-align: left; }
-.step-icon {
-    min-width: 50px; width: 50px; height: 50px;
-    background: rgba(59, 130, 246, 0.2); color: var(--accent-color);
-    border-radius: 50%; display: flex; justify-content: center; align-items: center;
-    margin-right: 15px;
-}
-.step-icon svg { width: 24px; height: 24px; }
-.step-box p { font-size: 0.9rem; color: #ccc; line-height: 1.3; margin: 0; }
-
-.action-btn {
-    background: var(--accent-color); color: white; border: none; padding: 12px 30px;
-    border-radius: 30px; font-size: 1rem; font-weight: 600;
-    cursor: pointer; transition: transform 0.2s; margin-top: 15px; width: 100%;
+    overflow: hidden; box-shadow: var(--shadow); z-index: 1;
 }
 
 /* ================= NAVIGATION BUTTONS ================= */
@@ -183,97 +126,60 @@ body, html {
 
 .nav-btn.prev, .nav-btn.next { width: 55px; height: 55px; top: 50%; transform: translateY(-50%); }
 .nav-btn.prev { left: 25px; } .nav-btn.next { right: 25px; }
-
-.nav-btn.loc-prev, .nav-btn.loc-next {
-    width: 45px; height: 45px; left: 50%; transform: translateX(-50%);
-    background: #374151;
-}
+.nav-btn.loc-prev, .nav-btn.loc-next { width: 45px; height: 45px; left: 50%; transform: translateX(-50%); background: #374151; }
 .nav-btn.loc-prev { top: 25px; } .nav-btn.loc-next { bottom: 100px; }
 
-/* ================= KARTE ================= */
-.map-panel {
-    height: 100%; width: 100%;
+/* ================= MODALS ================= */
+.modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8); backdrop-filter: blur(8px);
     display: flex; justify-content: center; align-items: center;
-    background: var(--bg-color);
+    opacity: 0; visibility: hidden; transition: all 0.3s ease; z-index: 1000;
 }
+.modal-overlay.show { opacity: 1; visibility: visible; }
+.modal-content {
+    background: #1e1e1e; padding: 30px; border-radius: var(--radius);
+    width: 85%; max-width: 450px; text-align: center;
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+    position: relative; transform: translateY(20px); transition: transform 0.3s ease;
+}
+.modal-overlay.show .modal-content { transform: translateY(0); }
+.close-modal {
+    position: absolute; top: 15px; right: 20px;
+    background: none; border: none; color: #666; font-size: 2rem; cursor: pointer;
+}
+.close-modal:hover { color: #fff; }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+.stat-box { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 15px; }
+.stat-value { display: block; font-size: 1.6rem; font-weight: 800; color: var(--accent-color); }
+.stat-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
 
-#map {
-    width: 96%;
-    height: 94%; /* Auch auf Desktop etwas Abstand */
-    border-radius: var(--radius);
-    overflow: hidden;
-    box-shadow: var(--shadow);
-    z-index: 1;
-}
+.tutorial-steps { display: grid; grid-template-columns: 1fr; gap: 20px; margin: 20px 0; text-align: center; }
+.step-box { display: flex; flex-direction: row; align-items: center; text-align: left; }
+.step-icon { min-width: 50px; width: 50px; height: 50px; background: rgba(59, 130, 246, 0.2); color: var(--accent-color); border-radius: 50%; display: flex; justify-content: center; align-items: center; margin-right: 15px; }
+.action-btn { background: var(--accent-color); color: white; border: none; padding: 12px 30px; border-radius: 30px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: transform 0.2s; margin-top: 15px; width: 100%; }
 
 /* ================= LOGIN PAGE ================= */
-.login-container {
-    display: flex; justify-content: center; align-items: center;
-    height: 100vh; width: 100vw; background-color: var(--bg-color);
-}
-.login-box {
-    background: var(--panel-color); padding: 40px; border-radius: var(--radius);
-    text-align: center; width: 90%; max-width: 400px;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.05);
-}
-/* ... Rest der Login Styles bleiben gleich ... */
+.login-container { display: flex; justify-content: center; align-items: center; height: 100vh; width: 100vw; background-color: var(--bg-color); }
+.login-box { background: var(--panel-color); padding: 40px; border-radius: var(--radius); text-align: center; width: 90%; max-width: 400px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.05); }
 .icon-circle { width: 60px; height: 60px; margin: 0 auto 20px; background: rgba(255,255,255,0.05); border-radius: 50%; display: flex; justify-content: center; align-items: center; color: var(--accent-color); }
-.login-box h1 { margin: 0 0 15px; font-size: 1.5rem; color: #fff; }
 .contact-btn { display: inline-block; text-decoration: none; width: 100%; padding: 15px; border-radius: 8px; background: var(--accent-color); color: white; font-weight: 600; box-sizing: border-box; }
 
-
-/* ================= MOBILE OPTIMIERUNG (WICHTIG) ================= */
+/* ================= MOBILE OPTIMIERUNG ================= */
 @media (max-width: 768px) {
-    .app-container {
-        grid-template-columns: 1fr;
-        grid-template-rows: 60% 40%; /* Bild bekommt 60%, Karte 40% */
-    }
+    .app-container { grid-template-columns: 1fr; grid-template-rows: 60% 40%; }
+    .gallery-panel { padding: 0; }
 
-    /* 1. FOTO BEREICH MOBIL */
-    .gallery-panel {
-        background: var(--bg-color);
-        /* Flexbox zentriert das Bild */
-        display: flex; justify-content: center; align-items: center;
-    }
+    .photo-wrapper { width: 94%; height: 94%; border-radius: var(--radius); }
 
-    .photo-wrapper {
-        /* HIER IST DIE MAGIE: Wir machen es etwas kleiner als 100% */
-        width: 94%;
-        height: 94%;
-        /* Und schalten die runden Ecken wieder AN */
-        border-radius: var(--radius);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-    }
-
-    /* Info-Buttons auf dem Bild (Mobile Position) */
-    .info-btn {
-        top: 4%; /* Relativ zum Bildrand */
-        width: 40px; height: 40px;
-        background: rgba(0,0,0,0.5);
-    }
+    .info-btn { top: 4%; width: 40px; height: 40px; background: rgba(0,0,0,0.5); }
     .help-pos { left: 5%; }
     .stats-pos { right: 5%; }
+    .info-overlay { width: 80%; bottom: 5%; padding: 8px; }
 
-    /* Overlay kleiner machen */
-    .info-overlay {
-        width: 80%; bottom: 5%; padding: 8px;
-    }
+    .map-panel { padding-top: 0; }
+    #map { width: 94%; height: 92%; margin: 0; }
 
-    /* 2. KARTEN BEREICH MOBIL */
-    .map-panel {
-        background: var(--bg-color);
-        display: flex; justify-content: center; align-items: center;
-        padding-top: 0; /* Kein doppelter Abstand oben */
-    }
-
-    #map {
-        /* Karte schwebt auch */
-        width: 94%;
-        height: 92%; /* Etwas Luft unten */
-        border-radius: var(--radius);
-        margin: 0;
-    }
-
-    /* Desktop Navigation ausblenden */
     .nav-btn { display: none !important; }
 }
