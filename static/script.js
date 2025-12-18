@@ -1,144 +1,140 @@
 document.addEventListener("DOMContentLoaded", () => {
-    // 1. Token Prüfung
+    // 1. Setup
     const TOKEN = document.body.dataset.token;
-    if (!TOKEN) {
-        console.error("Token fehlt!");
-        return alert("Fehler: Sicherheits-Token fehlt.");
-    }
+    if (!TOKEN) return alert("Token fehlt.");
 
-    // 2. Karte Setup
-    const map = L.map('map', { zoomControl: false }).setView([51.1657, 10.4515], 6);
+    // Karte
+    const map = L.map('map', { zoomControl: false }).setView([50, 10], 6);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19
     }).addTo(map);
 
-    // Globale Variablen
+    // Globals
     let allPhotos = [];
     let currentIndex = 0;
     let mapMarkers = [];
+    const activeStyle = { radius: 10, fillColor: '#3b82f6', color: '#fff', weight: 4, fillOpacity: 1 };
+    const inactiveStyle = { radius: 6, fillColor: '#64748b', color: '#fff', weight: 1, fillOpacity: 0.6 };
 
-    const activeMarkerStyle = { radius: 10, fillColor: '#3b82f6', color: '#fff', weight: 4, fillOpacity: 1 };
-    const inactiveMarkerStyle = { radius: 6, fillColor: '#64748b', color: '#fff', weight: 1, fillOpacity: 0.6 };
-
-    // 3. Daten laden
+    // 2. Daten laden (Jetzt mit STATS!)
     fetch(`/api/route?token=${TOKEN}`)
-    .then(res => res.json())
-    .then(data => {
-        if (data.length === 0) return document.getElementById('photo-location').innerText = "Keine Fotos gefunden";
+    .then(r => r.json())
+    .then(response => {
+        // --- NEUE LOGIK FÜR DAS STATISTIK FORMAT ---
+        const photos = response.photos;
+        const stats = response.stats;
 
-        allPhotos = data;
+        // Statistik in das HTML schreiben (mit Animation)
+        if (stats) {
+            animateValue("stat-km", 0, stats.total_km, 1500);
+            document.getElementById("stat-countries").innerText = stats.countries;
+            document.getElementById("stat-days").innerText = stats.days;
+            document.getElementById("stat-photos").innerText = stats.photo_count;
+        }
 
-        // Route zeichnen
-        const routeCoords = data.map(p => [p.lat, p.lon]);
-        L.polyline(routeCoords, {color: '#3b82f6', weight: 3, opacity: 0.5, dashArray: '5, 10'}).addTo(map);
+        if (!photos || photos.length === 0) return;
 
-        // Marker setzen
-        data.forEach((point, index) => {
-            const marker = L.circleMarker([point.lat, point.lon], inactiveMarkerStyle);
-            marker.on('click', () => { currentIndex = index; updateView(); });
-            marker.addTo(map);
-            mapMarkers.push(marker);
+        allPhotos = photos;
+
+        // Route & Marker
+        const coords = photos.map(p => [p.lat, p.lon]);
+        L.polyline(coords, {color: '#3b82f6', weight: 3, opacity: 0.5, dashArray: '5, 10'}).addTo(map);
+
+        photos.forEach((p, idx) => {
+            const m = L.circleMarker([p.lat, p.lon], inactiveStyle).addTo(map);
+            m.on('click', () => { currentIndex = idx; updateView(); });
+            mapMarkers.push(m);
         });
 
         updateView();
     })
-    .catch(err => console.error("API Fehler:", err));
+    .catch(e => console.error(e));
 
-    // --- VIEW UPDATE FUNKTION ---
+    // 3. View Logic
     function updateView() {
         const photo = allPhotos[currentIndex];
-        if(!photo) return;
-
-        const imgEl = document.getElementById('current-photo');
-
-        // Sanftes Einblenden
-        imgEl.style.opacity = 0;
+        const img = document.getElementById('current-photo');
+        img.style.opacity = 0;
         setTimeout(() => {
-            imgEl.src = `/api/thumb/${photo.filename}?token=${TOKEN}`;
-            imgEl.style.display = 'block';
-            imgEl.onload = () => { imgEl.style.opacity = 1; };
+            img.src = `/api/thumb/${photo.filename}?token=${TOKEN}`;
+            img.style.display = 'block';
+            img.onload = () => img.style.opacity = 1;
         }, 150);
 
-        // Text Infos
         const d = new Date(photo.timestamp * 1000);
         document.getElementById('photo-location').innerText = photo.location || "Unbekannt";
-        document.getElementById('photo-date').innerText = d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+        document.getElementById('photo-date').innerText = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 
-        // KARTE: Zoom Level 10 setzen
         map.flyTo([photo.lat, photo.lon], 10, { animate: true, duration: 1.5 });
 
-        // Marker Highlight
-        mapMarkers.forEach((m, idx) => {
-            if (idx === currentIndex) { m.setStyle(activeMarkerStyle); m.bringToFront(); }
-            else { m.setStyle(inactiveMarkerStyle); }
+        mapMarkers.forEach((m, i) => {
+            if (i === currentIndex) { m.setStyle(activeStyle); m.bringToFront(); }
+            else m.setStyle(inactiveStyle);
         });
     }
 
-    // --- HELPER: LÄNDERCODE ---
-    function getCountryCode(photo) {
-        if (!photo || !photo.location) return "UNK";
-        // Erwartet "Stadt, CC". Nimmt den letzten Teil nach dem Komma.
-        const parts = photo.location.split(',');
-        if (parts.length > 1) {
-            return parts[parts.length - 1].trim();
-        }
-        return "UNK"; // Fallback, falls kein Komma da ist
+    // --- HELPER: Zahlen hochzählen (Animation) ---
+    function animateValue(id, start, end, duration) {
+        const obj = document.getElementById(id);
+        if(!obj) return;
+        let startTimestamp = null;
+        const step = (timestamp) => {
+            if (!startTimestamp) startTimestamp = timestamp;
+            const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+            obj.innerHTML = Math.floor(progress * (end - start) + start).toLocaleString('de-DE'); // Mit Tausenderpunkt
+            if (progress < 1) window.requestAnimationFrame(step);
+        };
+        window.requestAnimationFrame(step);
     }
 
-    // --- NAVIGATION: FOTOS ---
-    window.changePhoto = function(dir) {
-        if (allPhotos.length === 0) return;
+    // --- HELPER: Country Code ---
+    function getCountryCode(p) {
+        if (!p || !p.location) return "UNK";
+        const parts = p.location.split(',');
+        return parts.length > 1 ? parts[parts.length - 1].trim() : "UNK";
+    }
+
+    // --- NAVIGATION ---
+    window.changePhoto = (dir) => {
+        if(!allPhotos.length) return;
         currentIndex = (currentIndex + dir + allPhotos.length) % allPhotos.length;
         updateView();
     };
 
-    // --- NAVIGATION: LÄNDER ---
-    window.changeLocation = function(dir) {
-        if (allPhotos.length === 0) return;
-
-        const currentCC = getCountryCode(allPhotos[currentIndex]);
-        let searchIdx = currentIndex;
+    window.changeLocation = (dir) => {
+        if(!allPhotos.length) return;
+        const cc = getCountryCode(allPhotos[currentIndex]);
+        let idx = currentIndex;
         let steps = 0;
-        const total = allPhotos.length;
 
         if (dir === 1) {
-            // Vorwärts (Pfeil Runter): Suche erstes Foto mit ANDEREM Ländercode
-            while (steps < total) {
-                searchIdx = (searchIdx + 1) % total;
-                if (getCountryCode(allPhotos[searchIdx]) !== currentCC) {
-                    currentIndex = searchIdx;
-                    break;
-                }
+            while(steps < allPhotos.length) {
+                idx = (idx + 1) % allPhotos.length;
+                if(getCountryCode(allPhotos[idx]) !== cc) { currentIndex = idx; break; }
                 steps++;
             }
         } else {
-            // Rückwärts (Pfeil Hoch):
-            // 1. Spule zurück zum Anfang des aktuellen Landes
-            while (steps < total) {
-                let prevIdx = (searchIdx - 1 + total) % total;
-                if (getCountryCode(allPhotos[prevIdx]) !== currentCC) break;
-                searchIdx = prevIdx;
-                steps++;
+            // Rückwärts Logik
+            while(steps < allPhotos.length) {
+                let prev = (idx - 1 + allPhotos.length) % allPhotos.length;
+                if(getCountryCode(allPhotos[prev]) !== cc) break;
+                idx = prev; steps++;
             }
-            // 2. Springe ins Land davor
-            searchIdx = (searchIdx - 1 + total) % total;
-            const prevCountryCC = getCountryCode(allPhotos[searchIdx]);
-
-            // 3. Spule auch dieses Land zum Anfang zurück
+            idx = (idx - 1 + allPhotos.length) % allPhotos.length;
+            const prevCC = getCountryCode(allPhotos[idx]);
             steps = 0;
-            while (steps < total) {
-                let prevIdx = (searchIdx - 1 + total) % total;
-                if (getCountryCode(allPhotos[prevIdx]) !== prevCountryCC) break;
-                searchIdx = prevIdx;
-                steps++;
+            while(steps < allPhotos.length) {
+                let prev = (idx - 1 + allPhotos.length) % allPhotos.length;
+                if(getCountryCode(allPhotos[prev]) !== prevCC) break;
+                idx = prev; steps++;
             }
-            currentIndex = searchIdx;
+            currentIndex = idx;
         }
         updateView();
     };
 
-    // --- EINGABE: TASTATUR ---
+    // --- TASTATUR ---
     document.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowLeft') window.changePhoto(-1);
         if (e.key === 'ArrowRight') window.changePhoto(1);
@@ -146,43 +142,30 @@ document.addEventListener("DOMContentLoaded", () => {
         if (e.key === 'ArrowDown') { e.preventDefault(); window.changeLocation(1); }
     });
 
-    // --- EINGABE: TOUCH SWIPE (FÜR HANDY) ---
+    // --- SWIPE ---
     const touchZone = document.querySelector('.gallery-panel');
-    let touchStartX = 0;
-    let touchStartY = 0;
-
-    // Startpunkt merken
-    touchZone.addEventListener('touchstart', (e) => {
-        touchStartX = e.changedTouches[0].screenX;
-        touchStartY = e.changedTouches[0].screenY;
-    }, {passive: false});
-
-    // Endpunkt auswerten
+    let tsX = 0, tsY = 0;
+    touchZone.addEventListener('touchstart', (e) => { tsX = e.changedTouches[0].screenX; tsY = e.changedTouches[0].screenY; }, {passive:false});
     touchZone.addEventListener('touchend', (e) => {
-        const touchEndX = e.changedTouches[0].screenX;
-        const touchEndY = e.changedTouches[0].screenY;
-
-        const xDiff = touchEndX - touchStartX;
-        const yDiff = touchEndY - touchStartY;
-        const threshold = 50; // Mindeststrecke in Pixeln
-
-        // Horizontal oder Vertikal?
-        if (Math.abs(xDiff) > Math.abs(yDiff)) {
-            // ---> HORIZONTAL (FOTOS)
-            if (Math.abs(xDiff) > threshold) {
-                // Wisch nach Links (Finger bewegt sich nach links) -> Nächstes Foto
-                if (xDiff < 0) window.changePhoto(1);
-                // Wisch nach Rechts -> Vorheriges Foto
-                else window.changePhoto(-1);
-            }
+        const xDiff = e.changedTouches[0].screenX - tsX;
+        const yDiff = e.changedTouches[0].screenY - tsY;
+        if(Math.abs(xDiff) > Math.abs(yDiff)) {
+            if(Math.abs(xDiff) > 50) window.changePhoto(xDiff < 0 ? 1 : -1);
         } else {
-            // ---> VERTIKAL (LÄNDER)
-            if (Math.abs(yDiff) > threshold) {
-                // Wisch nach Oben (Inhalt kommt von unten) -> Nächstes Land
-                if (yDiff < 0) window.changeLocation(1);
-                // Wisch nach Unten -> Vorheriges Land
-                else window.changeLocation(-1);
-            }
+            if(Math.abs(yDiff) > 50) window.changeLocation(yDiff < 0 ? 1 : -1);
         }
-    }, {passive: false});
+    }, {passive:false});
+
+    // --- STATISTIK MODAL STEUERUNG ---
+    const modal = document.getElementById('stats-modal');
+    document.getElementById('open-stats').addEventListener('click', () => {
+        modal.classList.add('show');
+    });
+    document.getElementById('close-stats').addEventListener('click', () => {
+        modal.classList.remove('show');
+    });
+    // Schließen bei Klick auf Hintergrund
+    modal.addEventListener('click', (e) => {
+        if(e.target === modal) modal.classList.remove('show');
+    });
 });

@@ -1,238 +1,149 @@
-/* =========================================
-   1. VARIABLEN & GRUNDEINSTELLUNGEN
-   ========================================= */
+/* ================= VARIABLES ================= */
 :root {
     --bg-color: #1a1a1a;
     --panel-color: #252525;
-    --accent-color: #3b82f6;      /* Modernes Blau */
+    --accent-color: #3b82f6;
     --accent-hover: #2563eb;
     --text-main: #ffffff;
     --text-muted: #a3a3a3;
-    --radius: 12px;               /* Rundung für Desktop-Rahmen */
-    --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+    --radius: 12px;
+    --shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 
-body, html {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    width: 100%;
-    font-family: 'Inter', sans-serif; /* Falls nicht geladen, Fallback System-Font */
-    background-color: var(--bg-color);
-    color: var(--text-main);
-    overflow: hidden; /* Verhindert Scrollbalken am Seitenrand */
-}
+body, html { margin: 0; padding: 0; height: 100%; font-family: 'Inter', sans-serif; background: var(--bg-color); color: var(--text-main); overflow: hidden; }
 
-/* =========================================
-   2. LAYOUT GRID (Split Screen)
-   ========================================= */
-.app-container {
-    display: grid;
-    /* Desktop: Linke Spalte (Foto) fast doppelt so breit wie Karte (1.8 zu 1) */
-    grid-template-columns: 1.8fr 1fr;
-    height: 100vh;
-    width: 100vw;
-}
+/* ================= LAYOUT ================= */
+.app-container { display: grid; grid-template-columns: 1.8fr 1fr; height: 100vh; width: 100vw; }
 
-/* =========================================
-   3. LINKER BEREICH: FOTO-GALERIE
-   ========================================= */
+/* ================= LINKER BEREICH ================= */
 .gallery-panel {
-    background-color: var(--panel-color);
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    /* Schatten wirft sich über die Karte */
-    box-shadow: 8px 0 20px rgba(0,0,0,0.4);
-    z-index: 10;
+    background: var(--panel-color); position: relative;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    box-shadow: 8px 0 20px rgba(0,0,0,0.4); z-index: 10;
 }
 
-/* Container um das Bild (Rahmen) */
 .photo-wrapper {
-    position: relative;
-    /* Nutze fast den ganzen Platz */
-    width: 96%;
-    height: 85%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: #000;
-    border-radius: var(--radius);
-    overflow: hidden;
-    box-shadow: var(--shadow);
+    position: relative; width: 96%; height: 85%;
+    display: flex; justify-content: center; align-items: center;
+    background: #000; border-radius: var(--radius);
+    overflow: hidden; box-shadow: var(--shadow);
 }
 
-/* Das eigentliche Bild */
 #current-photo {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain; /* Bild wird nie verzerrt */
-    transition: opacity 0.3s ease;
-    user-select: none;   /* Kein Markieren beim Wischen */
-    pointer-events: none; /* Wichtig für Touch-Events auf dem Container */
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    transition: opacity 0.3s ease; user-select: none; pointer-events: none;
 }
 
-/* Info Text (unten über dem Bild schwebend) */
+/* Info Overlay (unten) */
 .info-overlay {
+    position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(12px);
+    padding: 12px 25px; border-radius: 30px; text-align: center;
+    min-width: 250px; border: 1px solid rgba(255,255,255,0.1); z-index: 25;
+}
+.info-overlay h2 { margin: 0; font-size: 1.1rem; }
+.info-overlay p { margin: 3px 0 0 0; font-size: 0.9rem; color: var(--text-muted); }
+
+/* ================= INFO BUTTON (OBEN RECHTS) ================= */
+.info-btn {
     position: absolute;
-    bottom: 25px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.7); /* Halb-Transparent */
-    backdrop-filter: blur(12px);     /* Milchglas-Effekt */
-    padding: 12px 25px;
-    border-radius: 30px;
-    text-align: center;
-    min-width: 250px;
+    top: 25px;
+    right: 25px; /* HIER GEÄNDERT: Jetzt rechts */
+    width: 45px; height: 45px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 50%; color: var(--text-main);
+    cursor: pointer; display: flex; justify-content: center; align-items: center;
+    transition: all 0.2s ease; z-index: 50;
+}
+.info-btn:hover { background: var(--accent-color); border-color: var(--accent-color); transform: scale(1.1); }
+/* SVG Striche etwas dicker für bessere Sichtbarkeit */
+.info-btn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ================= STATISTIK MODAL ================= */
+.modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
+    display: flex; justify-content: center; align-items: center;
+    opacity: 0; visibility: hidden; transition: all 0.3s ease;
+    z-index: 1000;
+}
+.modal-overlay.show { opacity: 1; visibility: visible; }
+
+.modal-content {
+    background: #1e1e1e; padding: 40px; border-radius: 20px;
+    width: 90%; max-width: 500px; text-align: center;
     border: 1px solid rgba(255,255,255,0.1);
-    z-index: 25;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+    position: relative; transform: translateY(20px); transition: transform 0.3s ease;
+}
+.modal-overlay.show .modal-content { transform: translateY(0); }
+
+.close-modal {
+    position: absolute; top: 15px; right: 20px;
+    background: none; border: none; color: #666; font-size: 2rem;
+    cursor: pointer; transition: color 0.2s;
+}
+.close-modal:hover { color: #fff; }
+
+.modal-content h3 { font-size: 1.5rem; margin-bottom: 30px; font-weight: 300; letter-spacing: 1px; }
+
+/* Grid für die Zahlen */
+.stats-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+}
+.stat-box {
+    background: rgba(255,255,255,0.05); padding: 20px; border-radius: 15px;
+}
+.stat-value {
+    display: block; font-size: 2rem; font-weight: 800; color: var(--accent-color);
+}
+.stat-label {
+    font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;
 }
 
-.info-overlay h2 {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-}
-
-.info-overlay p {
-    margin: 3px 0 0 0;
-    font-size: 0.9rem;
-    color: var(--text-muted);
-}
-
-/* =========================================
-   4. NAVIGATION BUTTONS (Nur Desktop!)
-   ========================================= */
+/* ================= NAVIGATION BUTTONS ================= */
 .nav-btn {
-    position: absolute;
-    background-color: var(--accent-color);
-    color: white;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: all 0.2s ease;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-    z-index: 20;
+    position: absolute; background: var(--accent-color); color: white; border: none;
+    border-radius: 50%; cursor: pointer; display: flex; justify-content: center; align-items: center;
+    transition: all 0.2s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.4); z-index: 20;
 }
+.nav-btn:hover { background: var(--accent-hover); transform: scale(1.1); }
+.nav-btn svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 
-.nav-btn:hover {
-    background-color: var(--accent-hover);
-    transform: scale(1.1); /* Leichter Zoom beim Hover */
-}
+.nav-btn.prev, .nav-btn.next { width: 55px; height: 55px; top: 50%; transform: translateY(-50%); }
+.nav-btn.prev { left: 25px; } .nav-btn.next { right: 25px; }
 
-.nav-btn svg {
-    width: 26px;
-    height: 26px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2.5;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-}
-
-/* Links / Rechts (Foto wechseln) - Große Buttons */
-.nav-btn.prev, .nav-btn.next {
-    width: 55px;
-    height: 55px;
-    top: 50%;
-    transform: translateY(-50%);
-}
-.nav-btn.prev { left: 25px; }
-.nav-btn.next { right: 25px; }
-.nav-btn.prev:hover, .nav-btn.next:hover {
-    transform: translateY(-50%) scale(1.1);
-}
-
-/* Oben / Unten (Land wechseln) - Kleinere, graue Buttons */
 .nav-btn.loc-prev, .nav-btn.loc-next {
-    width: 45px;
-    height: 45px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: #374151; /* Dunkelgrau zur Unterscheidung */
+    width: 45px; height: 45px; left: 50%; transform: translateX(-50%);
+    background: #374151;
 }
-.nav-btn.loc-prev { top: 25px; }
-.nav-btn.loc-next { bottom: 100px; } /* Platz lassen für Info-Overlay */
-.nav-btn.loc-prev:hover, .nav-btn.loc-next:hover {
-    background-color: var(--accent-color);
-    transform: translateX(-50%) scale(1.1);
-}
+.nav-btn.loc-prev { top: 25px; } .nav-btn.loc-next { bottom: 100px; }
 
-/* =========================================
-   5. RECHTER BEREICH: KARTE
-   ========================================= */
-.map-panel {
-    position: relative;
-    height: 100%;
-    width: 100%;
-}
+/* ================= KARTE ================= */
+.map-panel { height: 100%; width: 100%; }
+#map { height: 100%; width: 100%; z-index: 1; }
 
-#map {
-    height: 100%;
-    width: 100%;
-    z-index: 1;
-}
-
-/* =========================================
-   6. MOBILE ANPASSUNG (SMARTPHONE)
-   ========================================= */
+/* ================= MOBILE ================= */
 @media (max-width: 768px) {
+    .app-container { grid-template-columns: 1fr; grid-template-rows: 65% 35%; }
+    .gallery-panel { padding: 0; }
+    .photo-wrapper { width: 100%; height: 100%; border-radius: 0; }
 
-    /* Layout drehen: Oben Bild, Unten Karte */
-    .app-container {
-        grid-template-columns: 1fr;
-        grid-template-rows: 65% 35%; /* 65% Höhe für das Bild */
+    /* Buttons weg */
+    .nav-btn { display: none !important; }
+
+    /* Info Button Mobile: Auch oben rechts */
+    .info-btn {
+        top: 15px;
+        right: 15px; /* Auch auf Mobile rechts */
+        left: auto; /* Left überschreiben */
+        background: rgba(0,0,0,0.5); width: 40px; height: 40px;
     }
 
-    /* Padding entfernen, damit Bild bis zum Rand geht */
-    .gallery-panel {
-        padding: 0;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.4);
-    }
+    .info-overlay { width: 90%; bottom: 10px; padding: 8px; pointer-events: none; }
 
-    /* Wrapper füllt alles aus, keine runden Ecken */
-    .photo-wrapper {
-        width: 100%;
-        height: 100%;
-        border-radius: 0;
-        box-shadow: none;
-    }
-
-    /* Bild passt sich maximal ein */
-    #current-photo {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-    }
-
-    /* --- WICHTIG: BUTTONS KOMPLETT ENTFERNEN --- */
-    /* Wir nutzen display: none !important um sicherzugehen */
-    .nav-btn,
-    .nav-btn.prev,
-    .nav-btn.next,
-    .nav-btn.loc-prev,
-    .nav-btn.loc-next {
-        display: none !important;
-        opacity: 0 !important;
-        visibility: hidden !important;
-        pointer-events: none !important;
-    }
-
-    /* Info Overlay kleiner und interaktionsfrei (zum Durchwischen) */
-    .info-overlay {
-        width: 90%;
-        bottom: 10px;
-        padding: 8px 15px;
-        background: rgba(0, 0, 0, 0.6);
-        pointer-events: none; /* Klicks gehen durch -> Swipe möglich */
-        border: none;
-    }
-
-    .info-overlay h2 { font-size: 0.95rem; }
-    .info-overlay p { font-size: 0.8rem; }
+    /* Stats Modal mobil anpassen */
+    .stats-grid { grid-template-columns: 1fr; gap: 10px; }
+    .stat-value { font-size: 1.8rem; }
 }

@@ -3,40 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meine Foto-Reise</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Meine Reise-Statistik</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
 </head>
 
 <body data-token="{{ token }}">
 
     <div class="app-container">
+
         <div class="gallery-panel">
 
-            <button class="nav-btn loc-prev" onclick="window.changeLocation(-1)" aria-label="Vorheriger Ort">
+            <button class="info-btn" id="open-stats" aria-label="Statistik anzeigen">
+                <svg viewBox="0 0 24 24">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+            </button>
+
+            <button class="nav-btn loc-prev" onclick="window.changeLocation(-1)" title="Vorheriger Ort">
                 <svg viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"></polyline></svg>
             </button>
 
-            <button class="nav-btn prev" onclick="window.changePhoto(-1)" aria-label="Zurück">
+            <button class="nav-btn prev" onclick="window.changePhoto(-1)" title="Zurück">
                 <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
             </button>
 
             <div class="photo-wrapper">
-                <img id="current-photo" src="" alt="Lade Foto..." onerror="this.style.display='none'">
+                <img id="current-photo" src="" alt="" onerror="this.style.display='none'">
             </div>
 
-            <button class="nav-btn next" onclick="window.changePhoto(1)" aria-label="Weiter">
+            <button class="nav-btn next" onclick="window.changePhoto(1)" title="Weiter">
                 <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </button>
 
-            <button class="nav-btn loc-next" onclick="window.changeLocation(1)" aria-label="Nächster Ort">
+            <button class="nav-btn loc-next" onclick="window.changeLocation(1)" title="Nächster Ort">
                 <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </button>
 
             <div class="info-overlay">
-                <h2 id="photo-location">Lade Daten...</h2>
-                <p id="photo-date">Bitte warten</p>
+                <h2 id="photo-location">Lade...</h2>
+                <p id="photo-date">...</p>
             </div>
         </div>
 
@@ -45,7 +55,34 @@
         </div>
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <div id="stats-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="close-modal" id="close-stats">&times;</button>
+            <h3>Reise Zusammenfassung</h3>
+
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <span class="stat-value" id="stat-km">0</span>
+                    <span class="stat-label">Kilometer</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-value" id="stat-countries">0</span>
+                    <span class="stat-label">Länder</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-value" id="stat-days">0</span>
+                    <span class="stat-label">Tage unterwegs</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-value" id="stat-photos">0</span>
+                    <span class="stat-label">Fotos</span>
+                </div>
+            </div>
+
+            </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
