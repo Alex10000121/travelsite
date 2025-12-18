@@ -16,6 +16,7 @@ PHOTO_DIR = os.environ.get('PHOTO_DIR', './photos')
 THUMB_DIR = os.environ.get('THUMB_DIR', './data/thumbs')
 DB_PATH = os.environ.get('DB_PATH', './data/trips.db')
 ACCESS_TOKEN = os.environ.get('ACCESS_TOKEN', 'geheim123')
+CONTACT_EMAIL = os.environ.get('CONTACT_EMAIL', 'deine.email@beispiel.de')
 
 os.makedirs(THUMB_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -169,9 +170,14 @@ def scan_worker():
 
 @app.route('/')
 def index():
-    if request.args.get('token') != ACCESS_TOKEN: abort(403)
-    return render_template('index.html', token=request.args.get('token'))
+    req_token = request.args.get('token')
 
+    # 1. Token ist korrekt -> Zeige die App
+    if req_token == ACCESS_TOKEN:
+        return render_template('index.html', token=ACCESS_TOKEN)
+
+    # 2. Sonst -> Zeige die Info-Seite (egal ob falscher Token oder gar keiner)
+    return render_template('login.html', contact_email=CONTACT_EMAIL)
 
 @app.route('/api/route')
 def api_route():

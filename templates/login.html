@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privater Zugang</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-box">
+            <div class="icon-circle">
+                <svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+            </div>
+
+            <h1>Private Reise-Galerie</h1>
+
+            <p>Diese Webseite ist geschützt und nur über einen persönlichen Einladungs-Link erreichbar.</p>
+
+            <p class="muted-text">
+                Hast du den Link verloren oder möchtest Zugang?
+                <br>Melde dich einfach kurz bei mir.
+            </p>
+
+            <a href="mailto:{{ contact_email }}?subject=Zugang%20Reisefotos" class="contact-btn">
+                Kontakt aufnehmen
+            </a>
+        </div>
+    </div>
+</body>
+</html>

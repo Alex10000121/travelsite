@@ -147,3 +147,45 @@ body, html { margin: 0; padding: 0; height: 100%; font-family: 'Inter', sans-ser
     .stats-grid { grid-template-columns: 1fr; gap: 10px; }
     .stat-value { font-size: 1.8rem; }
 }
+/* ================= LOGIN / INFO PAGE ================= */
+.login-container {
+    display: flex; justify-content: center; align-items: center;
+    height: 100vh; width: 100vw;
+    background-color: var(--bg-color);
+}
+
+.login-box {
+    background: var(--panel-color);
+    padding: 40px; border-radius: 20px;
+    text-align: center; width: 100%; max-width: 400px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.icon-circle {
+    width: 60px; height: 60px; margin: 0 auto 20px;
+    background: rgba(255,255,255,0.05); border-radius: 50%;
+    display: flex; justify-content: center; align-items: center;
+    color: var(--accent-color);
+}
+
+.login-box h1 { margin: 0 0 15px; font-size: 1.5rem; font-weight: 600; color: #fff; }
+.login-box p { color: #ccc; margin-bottom: 15px; font-size: 1rem; line-height: 1.5; }
+
+.login-box .muted-text {
+    font-size: 0.9rem; color: var(--text-muted); margin-bottom: 30px;
+}
+
+/* Der Kontakt-Button */
+.contact-btn {
+    display: inline-block;
+    text-decoration: none;
+    width: 100%; padding: 15px; border-radius: 8px; border: none;
+    background: var(--accent-color); color: white; font-size: 1rem; font-weight: 600;
+    cursor: pointer; transition: background 0.2s, transform 0.2s;
+    box-sizing: border-box; /* Wichtig damit Padding nicht die Breite sprengt */
+}
+.contact-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-2px);
+}
