@@ -216,4 +216,9 @@ def api_thumb(filename):
 
 if __name__ == '__main__':
     threading.Thread(target=scan_worker, daemon=True).start()
+    print("-" * 50)
+    print(f"Klicke hier zum Starten: http://127.0.0.1:5000/?token={ACCESS_TOKEN}")
+    print("-" * 50)
+
     app.run(host='0.0.0.0', port=5000)
+

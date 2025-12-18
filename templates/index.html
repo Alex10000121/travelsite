@@ -2,27 +2,45 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>TravelMap</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meine Foto-Reise</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 
 <body data-token="{{ token }}">
 
     <div class="app-container">
-        <div id="photo-viewer">
-            <button class="nav-btn nav-prev" onclick="changePhoto(-1)">&#10094;</button>
-            <img id="current-photo" src="" alt="Lade...">
-            <div class="photo-info" id="photo-caption">Initialisiere...</div>
-            <button class="nav-btn nav-next" onclick="changePhoto(1)">&#10095;</button>
+        <div class="gallery-panel">
+
+            <button class="nav-btn prev" onclick="window.changePhoto(-1)" aria-label="Zurück">
+                <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+
+            <div class="photo-wrapper">
+                <img id="current-photo" src="" alt="Lade Foto..." onerror="this.style.display='none'">
+            </div>
+
+            <button class="nav-btn next" onclick="window.changePhoto(1)" aria-label="Weiter">
+                <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+
+            <div class="info-overlay">
+                <h2 id="photo-location">Lade Daten...</h2>
+                <p id="photo-date">Bitte warten</p>
+            </div>
         </div>
 
-        <div id="map"></div>
+        <div class="map-panel">
+            <div id="map"></div>
+        </div>
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>

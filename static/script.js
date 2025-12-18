@@ -1,40 +1,41 @@
 document.addEventListener("DOMContentLoaded", () => {
-    console.log("--- SCRIPT GESTARTET ---");
 
-    // 1. Token aus dem HTML Body holen (Die "Brücke" zwischen Python und JS)
+    // 1. Token aus dem HTML-Body Attribut lesen
     const TOKEN = document.body.dataset.token;
-    
     if (!TOKEN) {
-        console.error("FATAL: Kein Token gefunden! Hat der <body> Tag das Attribut data-token?");
-        alert("Fehler: Sicherheitstoken fehlt.");
+        console.error("Token fehlt im HTML body tag!");
+        alert("Sicherheits-Token fehlt!");
         return;
     }
-    console.log("Token erfolgreich geladen.");
 
     // 2. Karte initialisieren
-    const map = L.map('map', {zoomControl: false}).setView([0,0], 2);
+    const map = L.map('map', { zoomControl: false }).setView([51.1657, 10.4515], 6);
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap',
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
         maxZoom: 19
     }).addTo(map);
 
-    // Globale Variablen (im Scope dieser Funktion)
+    // Globale Variablen
     let allPhotos = [];
     let currentIndex = 0;
     let mapMarkers = [];
 
-    // 3. Daten laden
-    const apiUrl = `/api/route?token=${TOKEN}`;
-    
-    fetch(apiUrl)
-    .then(response => {
-        if (!response.ok) throw new Error("HTTP Fehler: " + response.status);
-        return response.json();
-    })
+    const activeMarkerStyle = {
+        radius: 10, fillColor: '#3b82f6', color: '#fff', weight: 4, fillOpacity: 1
+    };
+    const inactiveMarkerStyle = {
+        radius: 6, fillColor: '#64748b', color: '#fff', weight: 1, fillOpacity: 0.6
+    };
+
+    // 3. Daten vom Server holen
+    fetch(`/api/route?token=${TOKEN}`)
+    .then(res => res.json())
     .then(data => {
         if (data.length === 0) {
-            console.warn("API meldet: Keine Fotos in der Datenbank.");
-            document.getElementById('photo-caption').innerText = "Keine Fotos gefunden.";
+            document.getElementById('photo-location').innerText = "Keine Fotos gefunden";
             return;
         }
 
@@ -42,14 +43,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Route zeichnen
         const routeCoords = data.map(p => [p.lat, p.lon]);
-        L.polyline(routeCoords, {color: '#e63946', weight: 4, opacity: 0.6}).addTo(map);
+        L.polyline(routeCoords, {color: '#3b82f6', weight: 3, opacity: 0.5, dashArray: '5, 10'}).addTo(map);
 
-        // Marker setzen
+        // Marker erstellen
         data.forEach((point, index) => {
-            const marker = L.circleMarker([point.lat, point.lon], {
-                radius: 5, fillColor: '#e63946', color: '#fff', weight: 1, fillOpacity: 0.8
-            });
-            
+            const marker = L.circleMarker([point.lat, point.lon], inactiveMarkerStyle);
+
             marker.on('click', () => {
                 currentIndex = index;
                 updateView();
@@ -59,53 +58,54 @@ document.addEventListener("DOMContentLoaded", () => {
             mapMarkers.push(marker);
         });
 
-        // Erstes Bild anzeigen
-        currentIndex = 0;
+        // Starten
         updateView();
     })
-    .catch(err => {
-        console.error("Fehler beim Laden der Daten:", err);
-    });
+    .catch(err => console.error("API Fehler:", err));
 
-    // --- INTERNE FUNKTIONEN ---
-
+    // --- VIEW UPDATE ---
     function updateView() {
         const photo = allPhotos[currentIndex];
         if(!photo) return;
 
-        // Bild URL
+        // Bild laden
         const imgUrl = `/api/thumb/${photo.filename}?token=${TOKEN}`;
         const imgEl = document.getElementById('current-photo');
-        
-        // Nur neu setzen, wenn anders (verhindert Flackern)
-        if(imgEl && imgEl.src.indexOf(imgUrl) === -1) {
+
+        // Fade-Effekt
+        imgEl.style.opacity = 0;
+        setTimeout(() => {
             imgEl.src = imgUrl;
-        }
+            imgEl.style.display = 'block';
+            imgEl.onload = () => { imgEl.style.opacity = 1; };
+        }, 150);
 
-        // Text Update
-        const dateStr = new Date(photo.timestamp * 1000).toLocaleDateString('de-DE');
-        const locationStr = photo.location ? photo.location : "Unbekannt";
-        const capEl = document.getElementById('photo-caption');
-        if(capEl) capEl.innerText = `${dateStr} | ${locationStr} (${currentIndex + 1}/${allPhotos.length})`;
+        // Text Infos
+        const dateObj = new Date(photo.timestamp * 1000);
+        const dateStr = dateObj.toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' });
+        const timeStr = dateObj.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
-        // Map Update
-        map.flyTo([photo.lat, photo.lon], 12);
+        document.getElementById('photo-location').innerText = photo.location || `Foto #${currentIndex + 1}`;
+        document.getElementById('photo-date').innerText = `${dateStr} um ${timeStr}`;
 
-        // Marker Styling
+        // Karte Update (Hier ist der Zoom 10)
+        map.flyTo([photo.lat, photo.lon], 10, {
+            animate: true,
+            duration: 1.5
+        });
+
+        // Marker Highlight
         mapMarkers.forEach((m, idx) => {
             if (idx === currentIndex) {
-                m.setStyle({ radius: 9, color: '#fff', weight: 3, fillColor: '#e63946', fillOpacity: 1 });
+                m.setStyle(activeMarkerStyle);
                 m.bringToFront();
             } else {
-                m.setStyle({ radius: 5, color: '#fff', weight: 1, fillColor: '#e63946', fillOpacity: 0.6 });
+                m.setStyle(inactiveMarkerStyle);
             }
         });
     }
 
     // --- NAVIGATION ---
-    
-    // Damit die Buttons im HTML funktionieren (onclick="changePhoto(...)"),
-    // müssen wir diese Funktion global verfügbar machen (window):
     window.changePhoto = function(dir) {
         if (allPhotos.length === 0) return;
         currentIndex += dir;
@@ -114,7 +114,6 @@ document.addEventListener("DOMContentLoaded", () => {
         updateView();
     };
 
-    // Tastatur
     document.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowLeft') window.changePhoto(-1);
         if (e.key === 'ArrowRight') window.changePhoto(1);
