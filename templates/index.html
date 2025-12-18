@@ -1,17 +1,14 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meine Reise-Statistik</title>
+{% extends "base.html" %}
 
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+{% block title %}Meine Reise-Statistik{% endblock %}
+
+{% block head %}
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
-</head>
+{% endblock %}
 
-<body data-token="{{ token }}">
+{% block body_attrs %}data-token="{{ token }}"{% endblock %}
 
+{% block content %}
     <div class="app-container">
 
         <div class="gallery-panel">
@@ -78,11 +75,9 @@
                     <span class="stat-label">Fotos</span>
                 </div>
             </div>
-
-            </div>
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
-</body>
-</html>
+{% endblock %}

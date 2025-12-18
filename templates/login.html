@@ -1,13 +1,8 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privater Zugang</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
-</head>
-<body>
+{% extends "base.html" %}
+
+{% block title %}Privater Zugang{% endblock %}
+
+{% block content %}
     <div class="login-container">
         <div class="login-box">
             <div class="icon-circle">
@@ -16,11 +11,11 @@
                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                 </svg>
             </div>
-
+            
             <h1>Private Reise-Galerie</h1>
-
+            
             <p>Diese Webseite ist geschützt und nur über einen persönlichen Einladungs-Link erreichbar.</p>
-
+            
             <p class="muted-text">
                 Hast du den Link verloren oder möchtest Zugang?
                 <br>Melde dich einfach kurz bei mir.
@@ -31,5 +26,4 @@
             </a>
         </div>
     </div>
-</body>
-</html>
+{% endblock %}
