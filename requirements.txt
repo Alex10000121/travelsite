@@ -1,3 +1,5 @@
 Flask
 Pillow
 reverse_geocoder
+gunicorn
+werkzeug
