@@ -1,6 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
 
-    // 1. SETUP (Kein Token-Reading mehr nötig)
+    // 1. SETUP
+    const TOKEN = document.body.dataset.token;
+    if (!TOKEN) return;
+
     const map = L.map('map', { zoomControl: false }).setView([50, 10], 6);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
@@ -14,16 +17,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const activeStyle = { radius: 10, fillColor: '#3b82f6', color: '#fff', weight: 4, fillOpacity: 1 };
     const inactiveStyle = { radius: 6, fillColor: '#64748b', color: '#fff', weight: 1, fillOpacity: 0.6 };
 
-    // 2. DATEN LADEN (Ohne URL Token, Cookie wird automatisch gesendet)
-    fetch('/api/route')
-        .then(r => {
-            // SICHERHEIT: Wenn Session abgelaufen (403), Seite neu laden (führt zum Login)
-            if (r.status === 403) {
-                window.location.reload();
-                throw new Error("Session expired");
-            }
-            return r.json();
-        })
+    // 2. DATEN LADEN
+    fetch(`/api/route?token=${TOKEN}`)
+        .then(r => r.json())
         .then(response => {
             const photos = response.photos;
             const stats = response.stats;
@@ -39,9 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
             allPhotos = photos;
 
             const coords = photos.map(p => [p.lat, p.lon]);
-            if(coords.length > 0) {
-                 L.polyline(coords, { color: '#3b82f6', weight: 3, opacity: 0.5, dashArray: '5, 10' }).addTo(map);
-            }
+            L.polyline(coords, { color: '#3b82f6', weight: 3, opacity: 0.5, dashArray: '5, 10' }).addTo(map);
 
             photos.forEach((p, idx) => {
                 const m = L.circleMarker([p.lat, p.lon], inactiveStyle).addTo(map);
@@ -51,25 +45,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
             updateView();
         })
-        .catch(e => console.error("Datenfehler oder nicht eingeloggt:", e));
+        .catch(e => console.error("Datenfehler:", e));
 
     // 3. ANSICHT AKTUALISIEREN
     function updateView() {
         if (!allPhotos.length) return;
 
         const photo = allPhotos[currentIndex];
-        const img = document.getElementById('current-photo');
-        const bgImg = document.getElementById('bg-photo');
+        const img = document.getElementById('current-photo'); // Vordergrund
+        const bgImg = document.getElementById('bg-photo');    // Hintergrund (Blur)
 
-        // Sauberer Fade-Effekt
+        // Ausblenden starten
         img.style.opacity = 0;
         if(bgImg) bgImg.style.opacity = 0;
 
         setTimeout(() => {
-            // URL ohne Token (Cookie regelt Auth)
-            // encodeURIComponent ist wichtig falls Dateinamen Sonderzeichen haben
-            const srcUrl = `/api/thumb/${encodeURIComponent(photo.filename)}`;
+            const srcUrl = `/api/thumb/${photo.filename}?token=${TOKEN}`;
 
+            // Beide Bilder laden
             img.src = srcUrl;
             img.style.display = 'block';
 
@@ -78,16 +71,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 bgImg.style.display = 'block';
             }
 
+            // Wenn fertig geladen, einblenden
             img.onload = () => {
                 img.style.opacity = 1;
                 if(bgImg) bgImg.style.opacity = 1;
             };
-
-            // Fehler beim Bildladen (z.B. Session abgelaufen während Nutzung)
-            img.onerror = () => {
-                // Optional: Prüfen ob man noch eingeloggt ist, wenn Bild nicht lädt
-                fetch(srcUrl).then(r => { if(r.status === 403) window.location.reload(); });
-            }
         }, 150);
 
         const d = new Date(photo.timestamp * 1000);
@@ -159,7 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
         updateView();
     };
 
-    // 5. INPUT
+    // 5. INPUT (Tastatur & Touch)
     document.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowLeft') window.changePhoto(-1);
         if (e.key === 'ArrowRight') window.changePhoto(1);
@@ -186,7 +174,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }, {passive:false});
     }
 
-    // 6. MODALS
+    // 6. UI & MODALS
     const statsModal = document.getElementById('stats-modal');
     const btnOpenStats = document.getElementById('open-stats');
     const btnCloseStats = document.getElementById('close-stats');
