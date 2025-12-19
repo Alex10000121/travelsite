@@ -11,14 +11,19 @@
 }
 
 body, html {
-    margin: 0; padding: 0;
-    height: 100%;
-    font-family: 'Inter', sans-serif;
-    background: var(--bg-color);
-    color: var(--text-main);
-    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    /* Statt height: 100vh; nimmst du das hier: */
+    height: 100dvh;
+    width: 100%;
+    overflow: hidden; /* Verhindert Scrollen, wichtig für Maps */
 }
 
+#map {
+    /* Auch hier sicherstellen */
+    height: 100dvh;
+    width:
+}
 /* ================= LAYOUT ================= */
 .app-container {
     display: grid;
