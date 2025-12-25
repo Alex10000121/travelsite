@@ -1,4 +1,5 @@
 /* ================= VARIABLES ================= */
+* { box-sizing: border-box; }
 :root {
     --bg-color: #1a1a1a;
     --panel-color: #252525;
@@ -24,7 +25,6 @@ body, html {
 .app-container {
     display: grid;
     grid-template-columns: 1.8fr 1fr;
-    height: 100vh;
     height: 100dvh;
     width: 100vw;
     background: var(--bg-color);
