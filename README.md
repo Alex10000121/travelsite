@@ -65,7 +65,7 @@ http://DEINE-IP:5000/?token=dein-geheimes-passwort
 | THUMB_DIR     | /data/thumbs   | Speicherort für generierte Vorschaubilder.              
 | DB_PATH       | /data/trips.db | Pfad zur SQLite-Datenbank.                              
 | ACCESS_TOKEN  | geheim123      | Wichtig: Der Token für den URL-Zugriff.                 
-| CONTACT_EMAIL | ...            | E-Mail-Adresse, die auf der Login-Seite angezeigt wird.## 🛠 Entwicklung (Lokal)
+| CONTACT_EMAIL | ...            | E-Mail-Adresse, die auf der Login-Seite angezeigt wird.
 
 Um das Projekt lokal ohne Docker zu testen:
 1. Repository klonen
