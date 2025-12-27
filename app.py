@@ -253,7 +253,12 @@ def api_route():
         conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT * FROM photos ORDER BY timestamp ASC").fetchall()
 
-    photos = [dict(r) for r in rows]
+    photos = []
+    for r in rows:
+        p = dict(r)
+        dt = datetime.fromtimestamp(p['timestamp'])
+        p['date_str'] = dt.strftime('%d.%m.%Y %H:%M')
+        photos.append(p)
 
     # --- STATISTIK BERECHNUNG ---
     total_km = 0
@@ -266,13 +271,11 @@ def api_route():
         end_ts = photos[-1]['timestamp']
 
         for i in range(len(photos)):
-            # Länder anhand des Country-Codes zählen
             loc = photos[i]['location']
             if loc and ',' in loc:
                 cc = loc.split(',')[-1].strip()
                 unique_countries.add(cc)
 
-            # Distanz zum vorherigen Punkt addieren
             if i > 0:
                 prev = photos[i - 1]
                 curr = photos[i]
@@ -294,7 +297,6 @@ def api_route():
     }
 
     return jsonify(response_data)
-
 
 @app.route('/api/thumb/<path:filename>')
 def api_thumb(filename):

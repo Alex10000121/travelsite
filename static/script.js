@@ -84,7 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const d = new Date(photo.timestamp * 1000);
         setText('photo-location', photo.location || "Unbekannt");
-        setText('photo-date', d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}));
+        setText('photo-date', photo.date_str || "Datum unbekannt");
 
         map.flyTo([photo.lat, photo.lon], 10, { animate: true, duration: 1.5 });
 
