@@ -184,6 +184,9 @@ def scan_worker():
     abs_photo_dir = os.path.abspath(PHOTO_DIR)
     print(f"[Scanner] Basis-Ordner: {abs_photo_dir}", flush=True)
 
+    # Datenbank initialisieren
+    init_db()
+
     while True:
         try:
             with sqlite3.connect(DB_PATH) as conn:
@@ -328,8 +331,7 @@ def api_thumb(filename):
 
 
 if __name__ == '__main__':
-    # Datenbank initialisieren
-    init_db()
+
 
     # Scanner im Hintergrund starten
     threading.Thread(target=scan_worker, daemon=True).start()
