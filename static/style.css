@@ -44,7 +44,7 @@ body, html {
 .photo-wrapper {
     position: relative;
     width: 96%;
-    height: 94%; /* Optimale Platznutzung auf Desktop */
+    height: 94%;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -61,7 +61,7 @@ body, html {
     object-fit: cover;
     filter: blur(20px) brightness(0.6);
     z-index: 1;
-    transform: scale(1.1); /* Überstehende Ränder ausblenden */
+    transform: scale(1.1);
 }
 
 /* HAUPTBILD */
@@ -71,8 +71,23 @@ body, html {
     object-fit: contain;
     z-index: 2;
     transition: opacity 0.3s ease;
-    user-select: none; pointer-events: none;
+    user-select: none;
+    /* WICHTIG: pointer-events muss aktiv sein, damit Klicks registriert werden */
+    cursor: zoom-in;
     box-shadow: 0 0 20px rgba(0,0,0,0.3);
+}
+
+/* FULLSCREEN MODUS (Wird per JS hinzugefügt) */
+.is-fullscreen {
+    position: fixed !important;
+    top: 0; left: 0;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 9999 !important;
+    background-color: #000;
+    object-fit: contain;
+    padding: 0; margin: 0;
+    cursor: zoom-out !important;
 }
 
 /* INFO LEISTE */
@@ -125,11 +140,7 @@ body, html {
     font-size: 0.85rem;
     text-align: center;
 }
-
-.modal-footer p {
-    margin: 0;
-    opacity: 0.6;
-}
+.modal-footer p { margin: 0; opacity: 0.6; }
 
 /* ================= NAVIGATION BUTTONS ================= */
 .nav-btn {
@@ -186,16 +197,12 @@ body, html {
 @media (max-width: 768px) {
     .app-container { grid-template-columns: 1fr; grid-template-rows: 60% 40%; }
     .gallery-panel { padding: 0; }
-
     .photo-wrapper { width: 94%; height: 94%; border-radius: var(--radius); }
-
     .info-btn { top: 4%; width: 40px; height: 40px; background: rgba(0,0,0,0.5); }
     .help-pos { left: 5%; }
     .stats-pos { right: 5%; }
     .info-overlay { width: 80%; bottom: 5%; padding: 8px; }
-
     .map-panel { padding-top: 0; }
     #map { width: 94%; height: 92%; margin: 0; }
-
     .nav-btn { display: none !important; }
 }

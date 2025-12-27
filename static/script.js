@@ -49,20 +49,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 3. ANSICHT AKTUALISIEREN
     function updateView() {
+        // Fullscreen zurücksetzen beim Bildwechsel
+        const img = document.getElementById('current-photo');
+        if (img) img.classList.remove('is-fullscreen');
+
         if (!allPhotos.length) return;
 
         const photo = allPhotos[currentIndex];
-        const img = document.getElementById('current-photo'); // Vordergrund-Bild
-        const bgImg = document.getElementById('bg-photo');    // Hintergrund-Bild (Blur)
+        const bgImg = document.getElementById('bg-photo');    // Hintergrund (Blur)
 
-        // Fade-Out Animation starten
+        // Ausblenden starten
         img.style.opacity = 0;
         if(bgImg) bgImg.style.opacity = 0;
 
         setTimeout(() => {
+            // Standardmäßig Thumbnail laden (schneller)
             const srcUrl = `/api/thumb/${photo.filename}?token=${TOKEN}`;
 
-            // Bildquellen setzen
+            // Beide Bilder laden
             img.src = srcUrl;
             img.style.display = 'block';
 
@@ -71,7 +75,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 bgImg.style.display = 'block';
             }
 
-            // Anzeigen, sobald das Bild geladen ist
+            // Wenn fertig geladen, einblenden
             img.onload = () => {
                 img.style.opacity = 1;
                 if(bgImg) bgImg.style.opacity = 1;
@@ -87,6 +91,27 @@ document.addEventListener("DOMContentLoaded", () => {
         mapMarkers.forEach((m, i) => {
             if (i === currentIndex) { m.setStyle(activeStyle); m.bringToFront(); }
             else { m.setStyle(inactiveStyle); }
+        });
+    }
+
+    // 4. FULLSCREEN LOGIK
+    const currentPhotoEl = document.getElementById('current-photo');
+    if (currentPhotoEl) {
+        currentPhotoEl.addEventListener('click', () => {
+            if (currentPhotoEl.classList.contains('is-fullscreen')) {
+                // Modus beenden
+                currentPhotoEl.classList.remove('is-fullscreen');
+            } else {
+                // Modus aktivieren & Originalbild laden
+                currentPhotoEl.classList.add('is-fullscreen');
+
+                if (allPhotos.length > 0) {
+                    const photo = allPhotos[currentIndex];
+                    // Parameter 'size=original' für volle Auflösung anfügen
+                    const hdUrl = `/api/thumb/${photo.filename}?token=${TOKEN}&size=original`;
+                    currentPhotoEl.src = hdUrl;
+                }
+            }
         });
     }
 
@@ -109,7 +134,7 @@ document.addEventListener("DOMContentLoaded", () => {
         window.requestAnimationFrame(step);
     }
 
-    // 4. NAVIGATION
+    // 5. NAVIGATION
     window.changePhoto = (dir) => {
         if(!allPhotos.length) return;
         currentIndex = (currentIndex + dir + allPhotos.length) % allPhotos.length;
@@ -147,7 +172,7 @@ document.addEventListener("DOMContentLoaded", () => {
         updateView();
     };
 
-    // 5. INPUT (Tastatur & Touch)
+    // 6. INPUT (Tastatur & Touch)
     document.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowLeft') window.changePhoto(-1);
         if (e.key === 'ArrowRight') window.changePhoto(1);
@@ -174,7 +199,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }, {passive:false});
     }
 
-    // 6. UI & MODALS
+    // 7. UI & MODALS
     const statsModal = document.getElementById('stats-modal');
     const btnOpenStats = document.getElementById('open-stats');
     const btnCloseStats = document.getElementById('close-stats');

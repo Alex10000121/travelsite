@@ -300,6 +300,17 @@ def api_route():
 def api_thumb(filename):
     if request.args.get('token') != ACCESS_TOKEN: abort(403)
 
+    # Pfade vorbereiten
+    safe_base = os.path.abspath(PHOTO_DIR)
+    os_filename = filename.replace('/', os.sep).replace('\\', os.sep)
+    original_file = os.path.abspath(os.path.join(safe_base, os_filename))
+
+    # --- NEU: Wenn 'original' angefordert wird, sofort das Original senden ---
+    if request.args.get('size') == 'original':
+        if os.path.exists(original_file) and original_file.startswith(safe_base):
+            return send_file(original_file)
+    # -------------------------------------------------------------------------
+
     flat_name = filename.replace('/', '_').replace('\\', '_')
     if not flat_name.lower().endswith('.jpg'): flat_name += '.jpg'
 
@@ -307,10 +318,6 @@ def api_thumb(filename):
 
     if os.path.exists(thumb_path):
         return send_file(thumb_path)
-
-    safe_base = os.path.abspath(PHOTO_DIR)
-    os_filename = filename.replace('/', os.sep).replace('\\', os.sep)
-    original_file = os.path.abspath(os.path.join(safe_base, os_filename))
 
     if os.path.exists(original_file) and original_file.startswith(safe_base):
         return send_file(original_file)
