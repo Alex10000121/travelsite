@@ -44,7 +44,7 @@ body, html {
 .photo-wrapper {
     position: relative;
     width: 96%;
-    height: 94%; /* Desktop: Viel Platz nutzen */
+    height: 94%; /* Optimale Platznutzung auf Desktop */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -61,7 +61,7 @@ body, html {
     object-fit: cover;
     filter: blur(20px) brightness(0.6);
     z-index: 1;
-    transform: scale(1.1); /* Ränder abschneiden */
+    transform: scale(1.1); /* Überstehende Ränder ausblenden */
 }
 
 /* HAUPTBILD */
@@ -75,7 +75,7 @@ body, html {
     box-shadow: 0 0 20px rgba(0,0,0,0.3);
 }
 
-/* Info Leiste */
+/* INFO LEISTE */
 .info-overlay {
     position: absolute;
     bottom: 40px;
@@ -116,7 +116,7 @@ body, html {
     border-radius: var(--radius);
     overflow: hidden; box-shadow: var(--shadow); z-index: 1;
 }
-/* In static/style.css hinzufügen */
+
 .modal-footer {
     margin-top: 30px;
     padding-top: 15px;

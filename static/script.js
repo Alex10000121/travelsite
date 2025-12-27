@@ -52,17 +52,17 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!allPhotos.length) return;
 
         const photo = allPhotos[currentIndex];
-        const img = document.getElementById('current-photo'); // Vordergrund
-        const bgImg = document.getElementById('bg-photo');    // Hintergrund (Blur)
+        const img = document.getElementById('current-photo'); // Vordergrund-Bild
+        const bgImg = document.getElementById('bg-photo');    // Hintergrund-Bild (Blur)
 
-        // Ausblenden starten
+        // Fade-Out Animation starten
         img.style.opacity = 0;
         if(bgImg) bgImg.style.opacity = 0;
 
         setTimeout(() => {
             const srcUrl = `/api/thumb/${photo.filename}?token=${TOKEN}`;
 
-            // Beide Bilder laden
+            // Bildquellen setzen
             img.src = srcUrl;
             img.style.display = 'block';
 
@@ -71,7 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 bgImg.style.display = 'block';
             }
 
-            // Wenn fertig geladen, einblenden
+            // Anzeigen, sobald das Bild geladen ist
             img.onload = () => {
                 img.style.opacity = 1;
                 if(bgImg) bgImg.style.opacity = 1;

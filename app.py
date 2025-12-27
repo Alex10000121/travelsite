@@ -3,7 +3,7 @@ import sqlite3
 import threading
 import time
 import math
-import hashlib  # <--- NEU: Für IP-Hashing
+import hashlib
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from PIL import Image, ImageOps
@@ -12,7 +12,7 @@ import reverse_geocoder as rg
 
 app = Flask(__name__)
 
-# --- CONFIG ---
+# --- KONFIGURATION ---
 PHOTO_DIR = os.environ.get('PHOTO_DIR', './photos')
 THUMB_DIR = os.environ.get('THUMB_DIR', './data/thumbs')
 DB_PATH = os.environ.get('DB_PATH', './data/trips.db')
@@ -23,14 +23,14 @@ os.makedirs(THUMB_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 
-# --- HELPER (MATH & GEO) ---
+# --- HILFSFUNKTIONEN (GEO & MATHE) ---
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     """
-    Berechnet die Distanz zwischen zwei Punkten auf der Erde (Haversine-Formel).
-    Gibt das Ergebnis in Kilometern zurück.
+    Berechnet die Distanz zwischen zwei Koordinaten (Haversine-Formel).
+    Rückgabe in Kilometern.
     """
-    R = 6371.0  # Radius der Erde in km
+    R = 6371.0  # Erdradius in km
 
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -44,7 +44,7 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return R * c
 
 
-# --- HELPER (IMAGE & EXIF) ---
+# --- HILFSFUNKTIONEN (BILD & EXIF) ---
 
 def get_exif_timestamp(path):
     try:
@@ -110,23 +110,23 @@ def generate_thumbnail(original_path, thumb_path):
         return False
 
 
-# --- DB INIT & VISITOR TRACKING ---
+# --- DATENBANK & TRACKING ---
 
 def init_db():
-    """Erstellt alle notwendigen Tabellen einmalig beim Start."""
+    """Erstellt alle notwendigen Tabellen beim Start."""
     print("[DB] Initialisiere Datenbank...", flush=True)
     try:
         with sqlite3.connect(DB_PATH) as conn:
-            # 1. Tabelle für Fotos
+            # Tabelle für Fotos
             conn.execute('''CREATE TABLE IF NOT EXISTS photos 
                           (filename TEXT PRIMARY KEY, lat REAL, lon REAL, timestamp REAL, location TEXT)''')
 
-            # 2. Tabelle für Besucher-Statistik (Globaler Zähler)
+            # Tabelle für Besucher-Statistik
             conn.execute('''CREATE TABLE IF NOT EXISTS global_stats 
                             (key TEXT PRIMARY KEY, value INTEGER)''')
             conn.execute("INSERT OR IGNORE INTO global_stats (key, value) VALUES ('visitor_count', 0)")
 
-            # 3. Tabelle für aktive Sessions (Datenschutz: temporär)
+            # Temporäre Tabelle für aktive Sessions
             conn.execute('''CREATE TABLE IF NOT EXISTS active_sessions 
                             (hash TEXT PRIMARY KEY, timestamp REAL)''')
 
@@ -137,35 +137,34 @@ def init_db():
 
 def track_visitor_count():
     """
-    Zählt Besucher datenschutzfreundlich.
-    - Speichert Hash nur für 1h (Session-Check).
-    - Zählt einen globalen Counter hoch, der permanent bleibt.
+    Zählt Besucher anhand eines anonymisierten Hashes.
+    Session-Timeout: 1 Stunde.
     """
     visitor_string = f"{request.remote_addr}-{request.user_agent.string}"
     visitor_hash = hashlib.sha256(visitor_string.encode('utf-8')).hexdigest()
     now = datetime.now().timestamp()
-    timeout = 3600  # 1 Stunde Session-Timeout
+    timeout = 3600
 
     total_visitors = 0
 
     try:
         with sqlite3.connect(DB_PATH) as conn:
-            # 1. Aufräumen (alte Sessions löschen)
+            # Abgelaufene Sessions bereinigen
             conn.execute("DELETE FROM active_sessions WHERE timestamp < ?", (now - timeout,))
 
-            # 2. Prüfen, ob Besucher schon aktiv ist
+            # Prüfen, ob Besucher bereits aktiv ist
             cursor = conn.execute("SELECT 1 FROM active_sessions WHERE hash = ?", (visitor_hash,))
             if not cursor.fetchone():
-                # Neuer Besucher -> Eintragen & Globalen Zähler erhöhen
+                # Neuer Besucher: Eintragen und Zähler erhöhen
                 conn.execute("INSERT INTO active_sessions (hash, timestamp) VALUES (?, ?)", (visitor_hash, now))
                 conn.execute("UPDATE global_stats SET value = value + 1 WHERE key = 'visitor_count'")
             else:
-                # Bekannter Besucher -> Session verlängern
+                # Bekannter Besucher: Zeitstempel aktualisieren
                 conn.execute("UPDATE active_sessions SET timestamp = ? WHERE hash = ?", (now, visitor_hash))
 
             conn.commit()
 
-            # 3. Aktuellen globalen Stand abrufen
+            # Aktuellen Zählerstand abrufen
             cursor = conn.execute("SELECT value FROM global_stats WHERE key = 'visitor_count'")
             row = cursor.fetchone()
             if row:
@@ -177,7 +176,7 @@ def track_visitor_count():
     return total_visitors
 
 
-# --- SCANNER ---
+# --- HINTERGRUND-SCANNER ---
 
 def scan_worker():
     print("[Scanner] Lade Geo-Daten...", flush=True)
@@ -188,8 +187,6 @@ def scan_worker():
     while True:
         try:
             with sqlite3.connect(DB_PATH) as conn:
-                # Tabellen-Erstellung entfernt -> passiert jetzt zentral in init_db()
-
                 count = 0
                 for root, dirs, files in os.walk(abs_photo_dir):
                     if '@eaDir' in root: continue
@@ -233,35 +230,32 @@ def scan_worker():
         time.sleep(600)
 
 
-# --- ROUTES ---
+# --- ROUTEN ---
 
 @app.route('/')
 def index():
     req_token = request.args.get('token')
 
-    # 1. Token ist korrekt -> Zeige die App
+    # Validierung des Zugriffstokens
     if req_token == ACCESS_TOKEN:
-        # Besucher zählen (nur bei erfolgreichem Login)
         visitor_count = track_visitor_count()
         return render_template('index.html', token=ACCESS_TOKEN, visitor_count=visitor_count)
 
-    # 2. Sonst -> Zeige die Info-Seite (egal ob falscher Token oder gar keiner)
+    # Fallback auf Login-Seite
     return render_template('login.html', contact_email=CONTACT_EMAIL)
 
 
 @app.route('/api/route')
 def api_route():
-    # 1. Token Check
     if request.args.get('token') != ACCESS_TOKEN: abort(403)
 
-    # 2. Daten laden
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT * FROM photos ORDER BY timestamp ASC").fetchall()
 
     photos = [dict(r) for r in rows]
 
-    # --- 3. STATISTIK BERECHNEN (ON THE FLY) ---
+    # --- STATISTIK BERECHNUNG ---
     total_km = 0
     unique_countries = set()
     start_ts = None
@@ -272,25 +266,23 @@ def api_route():
         end_ts = photos[-1]['timestamp']
 
         for i in range(len(photos)):
-            # A) Länder zählen (Format "Stadt, CC")
+            # Länder anhand des Country-Codes zählen
             loc = photos[i]['location']
             if loc and ',' in loc:
-                cc = loc.split(',')[-1].strip()  # Holt "DE", "IT" etc.
+                cc = loc.split(',')[-1].strip()
                 unique_countries.add(cc)
 
-            # B) Distanz addieren
+            # Distanz zum vorherigen Punkt addieren
             if i > 0:
                 prev = photos[i - 1]
                 curr = photos[i]
                 dist = calculate_distance(prev['lat'], prev['lon'], curr['lat'], curr['lon'])
                 total_km += dist
 
-    # Reisedauer in Tagen
     days = 0
     if start_ts and end_ts:
         days = int((end_ts - start_ts) / 86400) + 1
 
-    # 4. Antwort als "Paket" senden (Stats + Fotos)
     response_data = {
         "stats": {
             "total_km": round(total_km, 1),
@@ -327,14 +319,14 @@ def api_thumb(filename):
 
 
 if __name__ == '__main__':
-    # 1. Datenbank Tabellen erstellen (einmalig beim Start)
+    # Datenbank initialisieren
     init_db()
 
-    # 2. Scanner-Thread starten
+    # Scanner im Hintergrund starten
     threading.Thread(target=scan_worker, daemon=True).start()
 
     print("-" * 50)
-    print(f"Klicke hier zum Starten: http://127.0.0.1:5000/?token={ACCESS_TOKEN}")
+    print(f"Server läuft unter: http://127.0.0.1:5000/?token={ACCESS_TOKEN}")
     print("-" * 50)
 
     app.run(host='0.0.0.0', port=5000)
