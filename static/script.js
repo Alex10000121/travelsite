@@ -382,11 +382,15 @@ document.addEventListener("DOMContentLoaded", () => {
             // UI Reset
             dom.btnStats.style.color = originalColor;
             dom.btnStats.style.transform = "none";
+
+            // Anzahl speichern, bevor das Feld geleert wird
+            const totalFiles = files.length;
             dom.fileInput.value = "";
 
             if (successCount > 0) {
-                alert(`${successCount} von ${files.length} Fotos erfolgreich hochgeladen!`);
-                location.reload(); // Seite neu laden um neue Fotos zu sehen
+                // Gespeicherte Variable 'totalFiles' statt 'files.length' nutzen
+                alert(`${successCount} von ${totalFiles} Fotos erfolgreich hochgeladen!`);
+                location.reload();
             }
         });
     }
