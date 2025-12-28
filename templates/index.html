@@ -1,70 +1,78 @@
 {% extends "base.html" %}
 
-{% block title %}Travelsite{% endblock %}
+{% block title %}Reisebegleiter - Fotogalerie & Karte{% endblock %}
 
 {% block head %}
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin=""/>
 {% endblock %}
 
 {% block body_attrs %}data-token="{{ token }}"{% endblock %}
 
 {% block content %}
-    <div class="app-container">
+    <main class="app-container">
 
-        <div class="gallery-panel">
+        <section class="gallery-panel" aria-label="Fotogalerie">
 
-            <button class="info-btn help-pos" id="open-help" aria-label="Hilfe anzeigen">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
-            </button>
+            <div class="header-controls">
+                <button class="info-btn help-pos" id="open-help" aria-label="Hilfe und Anleitung öffnen">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </button>
 
-            <button class="info-btn stats-pos" id="open-stats" aria-label="Statistik anzeigen">
-                <svg viewBox="0 0 24 24">
-                    <line x1="18" y1="20" x2="18" y2="10"></line>
-                    <line x1="12" y1="20" x2="12" y2="4"></line>
-                    <line x1="6" y1="20" x2="6" y2="14"></line>
-                </svg>
-            </button>
+                <input type="file" id="file-input" accept="image/*" multiple style="display: none;" aria-hidden="true">
 
-            <button class="nav-btn loc-prev" onclick="window.changeLocation(-1)" title="Vorheriger Ort">
-                <svg viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"></polyline></svg>
-            </button>
-
-            <button class="nav-btn prev" onclick="window.changePhoto(-1)" title="Zurück">
-                <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
-            </button>
-
-            <div class="photo-wrapper">
-                <img id="bg-photo" src="" alt="" onerror="this.style.display='none'">
-                <img id="current-photo" src="" alt="" onerror="this.style.display='none'">
+                <button class="info-btn stats-pos" id="open-stats" aria-label="Statistik anzeigen (Admin Upload)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                </button>
             </div>
 
-            <button class="nav-btn next" onclick="window.changePhoto(1)" title="Weiter">
-                <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            <button class="nav-btn loc-prev" onclick="window.changeLocation(-1)" aria-label="Zum vorherigen Land springen" title="Vorheriges Land">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
             </button>
 
-            <button class="nav-btn loc-next" onclick="window.changeLocation(1)" title="Nächster Ort">
-                <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <button class="nav-btn prev" onclick="window.changePhoto(-1)" aria-label="Vorheriges Foto" title="Zurück">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
             </button>
 
-            <div class="info-overlay">
-                <h2 id="photo-location">Lade...</h2>
-                <p id="photo-date">...</p>
-            </div>
-        </div>
+            <figure class="photo-wrapper">
+                <img id="bg-photo" src="" alt="" role="presentation">
 
-        <div class="map-panel">
+                <img id="current-photo" src="" alt="Aktuelles Reisefoto">
+
+                <figcaption class="info-overlay">
+                    <h2 id="photo-location">Lade Reise...</h2>
+                    <p id="photo-date">...</p>
+                </figcaption>
+            </figure>
+
+            <button class="nav-btn next" onclick="window.changePhoto(1)" aria-label="Nächstes Foto" title="Weiter">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+
+            <button class="nav-btn loc-next" onclick="window.changeLocation(1)" aria-label="Zum nächsten Land springen" title="Nächstes Land">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+
+        </section>
+
+        <section class="map-panel" aria-label="Interaktive Karte">
             <div id="map"></div>
-        </div>
-    </div>
+        </section>
 
-    <div id="stats-modal" class="modal-overlay">
+    </main> <div id="stats-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="stats-title">
         <div class="modal-content">
-            <button class="close-modal" id="close-stats">&times;</button>
-            <h3>Reise Zusammenfassung</h3>
+            <button class="close-modal" id="close-stats" aria-label="Schließen">&times;</button>
+
+            <h3 id="stats-title">Reise Zusammenfassung</h3>
 
             <div class="stats-grid">
                 <div class="stat-box">
@@ -86,14 +94,14 @@
             </div>
 
             <div class="modal-footer">
-                <p>Bereits {{ visitor_count }} Reisebegleiter waren hier.</p>
+                <p>Bereits {{ visitor_count|default('0') }} Reisebegleiter waren hier.</p>
             </div>
         </div>
     </div>
 
-    <div id="tutorial-modal" class="modal-overlay">
+    <div id="tutorial-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="tut-title">
         <div class="modal-content tutorial-content">
-            <h3>So reist du mit</h3>
+            <h3 id="tut-title">So reist du mit</h3>
 
             <div class="tutorial-steps">
                 <div class="step-box">
@@ -126,6 +134,9 @@
         </div>
     </div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 {% endblock %}

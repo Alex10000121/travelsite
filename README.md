@@ -10,19 +10,25 @@ Das Projekt ist darauf ausgelegt, leichtgewichtig und privat zu sein. Ideal für
 ## ✨ Features
 
 ### 🗺 Interaktive Karte
-Zeigt den genauen Aufnahmeort jedes Fotos an, basierend auf GPS-Daten.
+Zeigt den genauen Aufnahmeort jedes Fotos an und verbindet sie zu einer Route. Klicke auf Marker, um direkt zum Foto zu springen.
+
+### 📸 Browser-Upload (Neu!)
+Lade Fotos direkt über den Browser hoch – auch vom Smartphone aus. Kein FTP oder SSH nötig.
 
 ### 📊 Live-Statistiken
 Berechnet automatisch:
 - Zurückgelegte Distanz in km  
 - Anzahl der besuchten Länder  
 - Dauer der Reise  
+- Besucherzähler: Sieh, wie viele Freunde deine Reise verfolgen.
 
-### 🔒 Privat & Sicher
-Zugriff nur über einen geheimen Token-Link möglich.
+### 🔒 Privat und Sicher
+Zugriff für Zuschauer nur über einen geheimen Token-Link möglich. Der Upload ist durch ein separates Admin-Passwort geschützt.
 
 ### 📱 Mobile-First
-Optimiert für Smartphones mit Swipe-Gesten und Touch-Support.
+- Swipe Links/Rechts: Nächstes/Vorheriges Foto. 
+- Swipe Hoch/Runter: Springt direkt zum nächsten/vorherigen Land.
+- Fullscreen: Klick auf das Bild für volle Auflösung.
 
 ### 🤖 Automatischer Scanner
 Überwacht deinen Foto-Ordner und fügt neue Bilder automatisch hinzu.
@@ -50,13 +56,27 @@ docker run -d \
   -v /pfad/zu/deinen/fotos:/photos \
   -v /pfad/fuer/daten:/data \
   -e ACCESS_TOKEN="dein-geheimes-passwort" \
+  -e ADMIN_TOKEN="admin-upload-passwort" \
   -e CONTACT_EMAIL="deine@email.de" \
   --restart always \
   ghcr.io/alex10000121/travelsite:latest
-```
+ ```
 ### Zugriff
 Öffne deinen Browser und rufe die Seite mit dem Token auf:
 http://DEINE-IP:5000/?token=dein-geheimes-passwort
+
+### 🎮 Bedienung & Tricks
+Admin-Upload (Versteckt)
+Um Fotos hochzuladen, ohne SSH-Zugriff zu benötigen:
+1. Klicke doppelt (schnell) auf den Statistik-Button (oben rechts, das Balkendiagramm-Icon). 
+2. Gib das ADMIN_TOKEN ein. 
+3. Wähle Bilder aus und lade sie hoch.
+
+Navigation
+
+Pfeiltasten (PC): ⬅️ ➡️ für Fotos, ⬆️ ⬇️ für Länderwechsel.
+
+Touch (Handy): Wischen für Navigation, Tippen für Vollbild.
 
 ## ⚙️ Konfiguration (Umgebungsvariablen)
 | Variable      | Standardwert   | Beschreibung                                            
@@ -64,8 +84,10 @@ http://DEINE-IP:5000/?token=dein-geheimes-passwort
 | PHOTO_DIR     | /photos        | Ordner im Container, in dem die Originalfotos liegen.   
 | THUMB_DIR     | /data/thumbs   | Speicherort für generierte Vorschaubilder.              
 | DB_PATH       | /data/trips.db | Pfad zur SQLite-Datenbank.                              
-| ACCESS_TOKEN  | geheim123      | Wichtig: Der Token für den URL-Zugriff.                 
+| ACCESS_TOKEN  | geheim123      | Besucher-Token: Für den Lesezugriff auf die Seite.                 
+| Admin_Token   | admin_geheim   | Upload-Passwort: Für den Datei-Upload via Browser.
 | CONTACT_EMAIL | ...            | E-Mail-Adresse, die auf der Login-Seite angezeigt wird.
+
 
 Um das Projekt lokal ohne Docker zu testen:
 1. Repository klonen
@@ -84,11 +106,16 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Der Server startet unter:http://127.0.0.1:5000
+Der Server startet unter:http://127.0.0.1:5000/?Token=geheim123
 ## 📂 Projektstruktur
 - app.py: Backend-Logik mit Flask, Foto-Scanner und API.
-- templates: HTML-Dateien wie index.html für die App und login.html für den Zugangsschutz.
-- static: Frontend-Assets wie CSS, JavaScript und Leaflet Karten-Logik.
+- templates: 
+  - index.html: Die Hauptanwendung.
+  - login.html: Vorschaltseite bei fehlendem Token.
+  - base.html: Grundgerüst.
+- static: 
+  - style.css: Modernes Dark-Mode Design.
+  - script.js: Frontend-Logik, Leaflet-Karte, Swipe-Erkennung.
 - Dockerfile: Bauplan für das Image inklusive Gunicorn und Background-Worker Setup.
 ## 🛡 Lizenz & Credits
 Erstellt von Alex.
