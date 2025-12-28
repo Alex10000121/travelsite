@@ -6,23 +6,19 @@ import math
 import hashlib
 import logging
 from datetime import datetime
+from multiprocessing import current_process
 
-# Drittanbieter-Bibliotheken
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from PIL import Image, ImageOps
 from PIL.ExifTags import TAGS, GPSTAGS
 import reverse_geocoder as rg
 from werkzeug.utils import secure_filename
 
-# --- 1. KONFIGURATION & LOGGING ---
-
-# Logging konfigurieren (besser als print)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Konfigurations-Variablen (Fallback auf Defaults)
 CONFIG = {
     'PHOTO_DIR': os.environ.get('PHOTO_DIR', './photos'),
     'THUMB_DIR': os.environ.get('THUMB_DIR', './data/thumbs'),
@@ -32,25 +28,24 @@ CONFIG = {
     'CONTACT_EMAIL': os.environ.get('CONTACT_EMAIL', 'deine.email@beispiel.de')
 }
 
-# Verzeichnisse erstellen
 os.makedirs(CONFIG['THUMB_DIR'], exist_ok=True)
 os.makedirs(os.path.dirname(CONFIG['DB_PATH']), exist_ok=True)
 
 
-# --- 2. HILFSFUNKTIONEN (LOGIK) ---
-
 def calculate_distance(lat1, lon1, lat2, lon2):
-    """Berechnet die Distanz zwischen zwei Koordinaten (Haversine-Formel)."""
-    R = 6371.0  # Erdradius in km
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
+    try:
+        R = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(
+            dlon / 2) ** 2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return R * c
+    except Exception:
+        return 0
 
 
 def get_decimal_from_dms(dms, ref):
-    """Wandelt DMS (Degrees, Minutes, Seconds) in Dezimalgrad um."""
     degrees = dms[0] + (dms[1] / 60.0) + (dms[2] / 3600.0)
     if ref in ['S', 'W']:
         degrees = -degrees
@@ -58,7 +53,6 @@ def get_decimal_from_dms(dms, ref):
 
 
 def extract_exif_data(image_path):
-    """Liest GPS und Zeitstempel aus den EXIF-Daten eines Bildes."""
     timestamp = None
     coords = None
 
@@ -68,8 +62,7 @@ def extract_exif_data(image_path):
             if not exif:
                 return None, None
 
-            # 1. Zeitstempel holen
-            date_str = exif.get(36867)  # DateTimeOriginal
+            date_str = exif.get(36867)
             if date_str:
                 try:
                     dt = datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
@@ -77,7 +70,6 @@ def extract_exif_data(image_path):
                 except ValueError:
                     pass
 
-            # 2. GPS Daten holen
             gps_info = {}
             for k, v in exif.items():
                 if TAGS.get(k) == "GPSInfo":
@@ -90,35 +82,30 @@ def extract_exif_data(image_path):
                 coords = (lat, lon)
 
     except Exception as e:
-        logger.warning(f"EXIF Fehler bei {image_path}: {e}")
+        logger.warning(f"EXIF read error: {image_path}: {e}")
 
     return timestamp, coords
 
 
 def get_location_name(lat, lon):
-    """Ermittelt den Ort basierend auf Koordinaten (Offline Reverse Geocoding)."""
-    if lat == 0 and lon == 0: return "Unbekannt"
+    if not lat or not lon: return "Unbekannt"
     try:
         results = rg.search((lat, lon))
         if results:
-            # Beispiel: "München, DE"
             return f"{results[0]['name']}, {results[0]['cc']}"
-    except Exception as e:
-        logger.error(f"Geocoding Fehler: {e}")
+    except Exception:
+        pass
     return "Unbekannt"
 
 
 def generate_thumbnail(original_path, thumb_path):
-    """Erstellt ein komprimiertes Thumbnail, beachtet EXIF-Rotation."""
     if os.path.exists(thumb_path):
         return True
 
     try:
         with Image.open(original_path) as img:
-            # WICHTIG: Bild gemäß EXIF-Tags drehen (sonst liegen Hochformat-Bilder auf der Seite)
             img = ImageOps.exif_transpose(img)
 
-            # Farbpalette konvertieren (für PNG/GIF Support)
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
 
@@ -126,21 +113,17 @@ def generate_thumbnail(original_path, thumb_path):
             img.save(thumb_path, "JPEG", quality=70, optimize=True)
         return True
     except Exception as e:
-        logger.error(f"Thumbnail Fehler bei {original_path}: {e}")
+        logger.error(f"Thumbnail generation error {original_path}: {e}")
         return False
 
 
-# --- 3. DATENBANK MANAGEMENT ---
-
 def get_db():
-    """Hilfsfunktion für DB-Verbindung."""
     conn = sqlite3.connect(CONFIG['DB_PATH'])
-    conn.row_factory = sqlite3.Row  # Zugriff über Spaltennamen ermöglichen
+    conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
-    """Initialisiert die Datenbank-Tabellen."""
     try:
         with get_db() as conn:
             conn.execute('''
@@ -155,23 +138,20 @@ def init_db():
             conn.execute('CREATE TABLE IF NOT EXISTS global_stats (key TEXT PRIMARY KEY, value INTEGER)')
             conn.execute("INSERT OR IGNORE INTO global_stats (key, value) VALUES ('visitor_count', 0)")
             conn.execute('CREATE TABLE IF NOT EXISTS active_sessions (hash TEXT PRIMARY KEY, timestamp REAL)')
-        logger.info("Datenbank initialisiert.")
+        logger.info("Database initialized.")
     except Exception as e:
-        logger.critical(f"Datenbank Init Fehler: {e}")
+        logger.critical(f"Database init failed: {e}")
 
 
 def track_visitor_count():
-    """Zählt einzigartige Besucher (basiert auf IP + UserAgent Hash für 1h)."""
     visitor_hash = hashlib.sha256(f"{request.remote_addr}-{request.user_agent.string}".encode('utf-8')).hexdigest()
     now = time.time()
     total = 0
 
     try:
         with get_db() as conn:
-            # Alte Sessions löschen (> 1 Stunde)
             conn.execute("DELETE FROM active_sessions WHERE timestamp < ?", (now - 3600,))
 
-            # Prüfen ob Besucher neu ist
             cursor = conn.execute("SELECT 1 FROM active_sessions WHERE hash = ?", (visitor_hash,))
             if not cursor.fetchone():
                 conn.execute("INSERT INTO active_sessions (hash, timestamp) VALUES (?, ?)", (visitor_hash, now))
@@ -181,23 +161,17 @@ def track_visitor_count():
 
             conn.commit()
 
-            # Aktuellen Stand lesen
             row = conn.execute("SELECT value FROM global_stats WHERE key = 'visitor_count'").fetchone()
             if row: total = row['value']
     except Exception as e:
-        logger.error(f"Visitor Tracking Fehler: {e}")
+        logger.error(f"Visitor tracking error: {e}")
 
     return total
 
 
-# --- 4. HINTERGRUND SCANNER ---
-
 def scan_worker():
-    """Scannt periodisch das Foto-Verzeichnis nach neuen Dateien."""
-    logger.info("Scanner Thread gestartet.")
-
-    # Warte kurz, damit Flask fertig starten kann
-    time.sleep(2)
+    time.sleep(3)
+    logger.info("Scanner started.")
 
     abs_photo_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
 
@@ -206,32 +180,25 @@ def scan_worker():
             changes_detected = False
             with get_db() as conn:
                 for root, dirs, files in os.walk(abs_photo_dir):
-                    if '@eaDir' in root: continue  # Synology Thumbnails ignorieren
+                    if '@eaDir' in root: continue
 
                     for file in files:
                         if file.lower().endswith(('.jpg', '.jpeg', '.png', '.heic')):
                             full_path = os.path.join(root, file)
 
-                            # Relativer Pfad für DB und URLs
                             rel_path = os.path.relpath(full_path, abs_photo_dir).replace('\\', '/')
                             if rel_path.startswith('./'): rel_path = rel_path[2:]
 
-                            # Prüfen ob bereits in DB
                             exists = conn.execute("SELECT 1 FROM photos WHERE filename=?", (rel_path,)).fetchone()
 
                             if not exists:
-                                # Thumbnail Name generieren (flache Struktur im Cache)
                                 flat_name = rel_path.replace('/', '_').replace('\\', '_')
                                 if not flat_name.lower().endswith('.jpg'): flat_name += '.jpg'
                                 thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
 
-                                # Thumbnail erstellen
                                 generate_thumbnail(full_path, thumb_path)
-
-                                # Metadaten extrahieren
                                 timestamp, coords = extract_exif_data(full_path)
 
-                                # Fallback Werte
                                 final_ts = timestamp or os.path.getmtime(full_path)
                                 lat, lon = coords if coords else (0, 0)
                                 loc = get_location_name(lat, lon)
@@ -240,31 +207,22 @@ def scan_worker():
                                     "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
                                     (rel_path, lat, lon, final_ts, loc)
                                 )
-                                logger.info(f"Neues Foto indexiert: {rel_path}")
+                                logger.info(f"Indexed: {rel_path} (GPS: {lat}, {lon})")
                                 changes_detected = True
 
-                if changes_detected:
-                    conn.commit()
+                if changes_detected: conn.commit()
 
         except Exception as e:
-            logger.error(f"Scanner Loop Fehler: {e}")
+            logger.error(f"Scanner loop error: {e}")
 
-        # Alle 10 Minuten scannen
         time.sleep(600)
 
 
-# --- 5. ROUTES & API ---
-
 @app.route('/')
 def index():
-    # Login-Schutz
     token = request.args.get('token')
     if token == CONFIG['ACCESS_TOKEN']:
-        return render_template(
-            'index.html',
-            token=token,
-            visitor_count=track_visitor_count()
-        )
+        return render_template('index.html', token=token, visitor_count=track_visitor_count())
     return render_template('login.html', contact_email=CONFIG['CONTACT_EMAIL'])
 
 
@@ -279,30 +237,33 @@ def api_route():
 
         for r in rows:
             p = dict(r)
-            # Formatierung für Frontend
             p['date_str'] = datetime.fromtimestamp(p['timestamp']).strftime('%d.%m.%Y')
             photos.append(p)
     except Exception as e:
-        logger.error(f"API Route Fehler: {e}")
+        logger.error(f"API Route error: {e}")
         return jsonify({"error": "DB Error"}), 500
 
-    # Statistik Berechnung
     total_km = 0
     unique_countries = set()
     days = 0
 
     if photos:
         for i in range(len(photos)):
-            # Länder zählen
             loc = photos[i]['location']
             if loc and ',' in loc:
                 unique_countries.add(loc.split(',')[-1].strip())
 
-            # Distanz akkumulieren (nur wenn Koordinaten vorhanden)
             if i > 0:
                 p1, p2 = photos[i - 1], photos[i]
-                if p1['lat'] != 0 and p2['lat'] != 0:
-                    total_km += calculate_distance(p1['lat'], p1['lon'], p2['lat'], p2['lon'])
+
+                lat1, lon1 = p1.get('lat'), p1.get('lon')
+                lat2, lon2 = p2.get('lat'), p2.get('lon')
+
+                if (lat1 is not None and lon1 is not None and
+                        lat2 is not None and lon2 is not None):
+
+                    if lat1 != 0 and lat2 != 0:
+                        total_km += calculate_distance(lat1, lon1, lat2, lon2)
 
         days = int((photos[-1]['timestamp'] - photos[0]['timestamp']) / 86400) + 1
 
@@ -321,96 +282,87 @@ def api_route():
 def api_thumb(filename):
     if request.args.get('token') != CONFIG['ACCESS_TOKEN']: abort(403)
 
-    # PATH TRAVERSAL SCHUTZ (Wichtig!)
     base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
     requested_path = os.path.abspath(os.path.join(base_dir, filename))
-    if not os.path.commonpath([base_dir, requested_path]) == base_dir:
-        abort(403)
+    if not os.path.commonpath([base_dir, requested_path]) == base_dir: abort(403)
 
-    # 1. Fullscreen Request? -> Originalbild senden
     if request.args.get('size') == 'original':
         if os.path.exists(requested_path):
             return send_file(requested_path)
 
-    # 2. Thumbnail Request
     flat_name = filename.replace('/', '_').replace('\\', '_')
     if not flat_name.lower().endswith('.jpg'): flat_name += '.jpg'
     thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
 
-    # Wenn Thumbnail existiert, senden
-    if os.path.exists(thumb_path):
-        return send_file(thumb_path)
-
-    # Fallback: Versuche Original zu senden, wenn kein Thumb da ist
-    if os.path.exists(requested_path):
-        return send_file(requested_path)
-
+    if os.path.exists(thumb_path): return send_file(thumb_path)
+    if os.path.exists(requested_path): return send_file(requested_path)
     abort(404)
 
 
 @app.route('/api/upload', methods=['POST'])
 def upload_photo():
-    # Admin Token Check
     if request.form.get('admin_token') != CONFIG['ADMIN_TOKEN']:
-        return jsonify({'error': 'Ungültiges Passwort'}), 403
+        return jsonify({'error': 'Invalid Password'}), 403
 
-    if 'photo' not in request.files:
-        return jsonify({'error': 'Keine Datei empfangen'}), 400
-
+    if 'photo' not in request.files: return jsonify({'error': 'No file'}), 400
     file = request.files['photo']
-    if file.filename == '':
-        return jsonify({'error': 'Dateiname leer'}), 400
+    if file.filename == '': return jsonify({'error': 'Empty filename'}), 400
 
-    if file:
-        try:
-            # Sicherer Dateiname + Timestamp gegen Überschreiben
-            filename = secure_filename(file.filename)
-            unique_name = f"{int(time.time())}_{filename}"
-            save_path = os.path.join(CONFIG['PHOTO_DIR'], unique_name)
+    try:
+        filename = secure_filename(file.filename)
+        unique_name = f"{int(time.time())}_{filename}"
+        save_path = os.path.join(CONFIG['PHOTO_DIR'], unique_name)
+        file.save(save_path)
 
-            file.save(save_path)
-            logger.info(f"Upload gespeichert: {save_path}")
+        thumb_path = os.path.join(CONFIG['THUMB_DIR'], unique_name + '.jpg')
+        generate_thumbnail(save_path, thumb_path)
 
-            # Direkt verarbeiten (nicht auf Scanner warten für sofortiges Feedback)
-            thumb_path = os.path.join(CONFIG['THUMB_DIR'], unique_name + '.jpg')
-            generate_thumbnail(save_path, thumb_path)
+        ts, coords = extract_exif_data(save_path)
 
-            ts, coords = extract_exif_data(save_path)
-            final_ts = ts or time.time()
-            lat, lon = coords if coords else (0, 0)
-            loc = get_location_name(lat, lon)
+        if coords:
+            logger.info(f"EXIF: GPS found for {filename}: {coords}")
+        else:
+            logger.warning(f"EXIF: NO GPS for {filename}")
 
-            # Relativer Pfad für DB (da wir flach im Root speichern)
-            rel_path = unique_name
+        final_ts = ts or time.time()
+        lat, lon = coords if coords else (0, 0)
+        loc = get_location_name(lat, lon)
 
-            with get_db() as conn:
-                conn.execute(
-                    "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                    (rel_path, lat, lon, final_ts, loc)
-                )
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                (unique_name, lat, lon, final_ts, loc)
+            )
 
-            return jsonify({'success': True, 'file': rel_path})
+        return jsonify({'success': True, 'file': unique_name})
 
-        except Exception as e:
-            logger.error(f"Upload Processing Error: {e}")
-            return jsonify({'error': str(e)}), 500
-
-    return jsonify({'error': 'Unbekannter Fehler'}), 500
+    except Exception as e:
+        logger.error(f"Upload error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
-# --- START ---
+# --- BACKGROUND SERVICES ---
 
-if __name__ == '__main__':
-    # Initialisierung
+def start_background_services():
+    """Initializes DB and starts background threads. Should only run in MainProcess."""
     init_db()
 
-    # Pre-Load Reverse Geocoder (verhindert Lags beim ersten Upload)
-    print("Lade Geodaten...", flush=True)
+    # Preload Geocoder to avoid lag on first upload
+    # This might still trigger multiprocessing, but since we are inside the guard, it's safer
     rg.search((0, 0))
 
-    # Scanner Thread starten (nur einmal im Main Prozess)
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
-        scanner = threading.Thread(target=scan_worker, daemon=True)
-        scanner.start()
+    threading.Thread(target=scan_worker, daemon=True).start()
 
+
+# --- STARTUP LOGIC ---
+
+if __name__ == '__main__':
+    # Local Development
+    print("Starting local...", flush=True)
+    start_background_services()
     app.run(host='0.0.0.0', port=5000, debug=True)
+
+elif current_process().name == 'MainProcess':
+    # Docker / Gunicorn Production
+    # Only run this if we are the Gunicorn Worker, NOT the Reverse Geocoder Child Process
+    start_background_services()
