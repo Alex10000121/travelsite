@@ -267,4 +267,26 @@ body, html {
 
     /* Navigation via Swipe statt Buttons auf Mobile */
     .nav-btn { display: none !important; }
+    /* =========================================
+   UPLOAD PROGRESS BAR
+   ========================================= */
+    .progress-container {
+        width: 100%;
+        height: 10px;
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        margin-top: 20px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        width: 0%; /* Startet bei 0 */
+        background-color: var(--accent-color);
+        border-radius: 10px;
+        transition: width 0.3s ease-out; /* Weiche Animation */
+        box-shadow: 0 0 10px var(--accent-color);
+    }
+
 }

@@ -312,20 +312,29 @@ def upload_photo():
         filename = secure_filename(file.filename)
         unique_name = f"{int(time.time())}_{filename}"
         save_path = os.path.join(CONFIG['PHOTO_DIR'], unique_name)
+
         file.save(save_path)
 
-        thumb_path = os.path.join(CONFIG['THUMB_DIR'], unique_name + '.jpg')
-        generate_thumbnail(save_path, thumb_path)
 
         ts, coords = extract_exif_data(save_path)
 
-        if coords:
-            logger.info(f"EXIF: GPS found for {filename}: {coords}")
-        else:
-            logger.warning(f"EXIF: NO GPS for {filename}")
+
+        if not coords:
+
+            if os.path.exists(save_path):
+                os.remove(save_path)
+
+            logger.warning(f"Upload abgelehnt für {filename}: Keine GPS-Daten vorhanden.")
+            return jsonify({'error': 'Das Bild enthält keine GPS-Metadaten und wurde daher abgelehnt.'}), 400
+
+        # 3. Wenn GPS vorhanden ist, machen wir normal weiter
+        thumb_path = os.path.join(CONFIG['THUMB_DIR'], unique_name + '.jpg')
+        generate_thumbnail(save_path, thumb_path)
+
+        logger.info(f"EXIF: GPS gefunden für {filename}: {coords}")
 
         final_ts = ts or time.time()
-        lat, lon = coords if coords else (0, 0)
+        lat, lon = coords
         loc = get_location_name(lat, lon)
 
         with get_db() as conn:
@@ -337,9 +346,11 @@ def upload_photo():
         return jsonify({'success': True, 'file': unique_name})
 
     except Exception as e:
+        if 'save_path' in locals() and os.path.exists(save_path):
+            os.remove(save_path)
+
         logger.error(f"Upload error: {e}")
         return jsonify({'error': str(e)}), 500
-
 
 # --- BACKGROUND SERVICES ---
 
