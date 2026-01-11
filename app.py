@@ -349,6 +349,7 @@ def upload_photo():
         logger.error(f"Upload error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 # --- BACKGROUND SERVICES ---
 
 def start_background_services():
