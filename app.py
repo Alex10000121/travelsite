@@ -315,19 +315,17 @@ def upload_photo():
 
         file.save(save_path)
 
-
         ts, coords = extract_exif_data(save_path)
-
 
         if not coords:
 
             if os.path.exists(save_path):
                 os.remove(save_path)
 
-            logger.warning(f"Upload abgelehnt für {filename}: Keine GPS-Daten vorhanden.")
-            return jsonify({'error': 'Das Bild enthält keine GPS-Metadaten und wurde daher abgelehnt.'}), 400
+            logger.warning(f"Upload abgelehnt: {filename} hat keine GPS-Daten.")
+            return jsonify({'error': 'Keine GPS-Daten im Bild gefunden (Upload abgelehnt).'}), 400
 
-        # 3. Wenn GPS vorhanden ist, machen wir normal weiter
+        # 3. Wenn wir hier sind, ist alles okay -> Thumbnail erstellen
         thumb_path = os.path.join(CONFIG['THUMB_DIR'], unique_name + '.jpg')
         generate_thumbnail(save_path, thumb_path)
 
@@ -348,7 +346,6 @@ def upload_photo():
     except Exception as e:
         if 'save_path' in locals() and os.path.exists(save_path):
             os.remove(save_path)
-
         logger.error(f"Upload error: {e}")
         return jsonify({'error': str(e)}), 500
 
