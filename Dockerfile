@@ -41,4 +41,4 @@ EXPOSE 5000
 
 # 6. Startbefehl
 # Startet den Scanner-Thread (via Python) und den Webserver (Gunicorn) parallel
-CMD ["sh", "-c", "python -c 'import app; import threading; threading.Thread(target=app.scan_worker, daemon=True).start(); import time; time.sleep(31536000)' & gunicorn -w 3 -b 0.0.0.0:5000 app:app"]
+CMD ["sh", "-c", "python -c 'import app; app.init_db(); import threading; threading.Thread(target=app.scan_worker, daemon=True).start(); import time; time.sleep(31536000)' & gunicorn -w 3 -b 0.0.0.0:5000 app:app"]
