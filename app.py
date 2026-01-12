@@ -422,7 +422,13 @@ def delete_photo():
     except Exception as e:
         logger.error(f"Delete error: {e}")
         return jsonify({'error': str(e)}), 500
-
+@app.route('/api/check_login', methods=['POST'])
+def check_login():
+    data = request.json
+    # Wir prüfen einfach, ob das gesendete Passwort mit dem Admin-Token übereinstimmt
+    if data.get('admin_token') == CONFIG['ADMIN_TOKEN']:
+        return jsonify({'success': True})
+    return jsonify({'error': 'Wrong password'}), 403
 
 def start_background_services():
     init_db()
