@@ -106,7 +106,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Der Server startet unter:http://127.0.0.1:5000/?Token=geheim123
+Der Server startet unter:http://127.0.0.1:5000/?token=geheim123
 ## 📂 Projektstruktur
 - app.py: Backend-Logik mit Flask, Foto-Scanner und API.
 - templates: 
