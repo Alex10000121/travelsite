@@ -5,23 +5,31 @@ document.addEventListener("DOMContentLoaded", () => {
      * 1. KONFIGURATION & SETUP
      * =============================================================================
      */
+
+    // NEU: Prüfung auf Darkmode
+    const isDarkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
     const CONFIG = {
         zoomLevel: 6,
         center: [50, 10],
-        tileLayerUrl: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        // NEU: Wählt die URL basierend auf der Systemeinstellung
+        tileLayerUrl: isDarkMode
+            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' // Dark Mode Karte
+            : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', // Light Mode Karte
         tileAttribution: '&copy; OpenStreetMap &copy; CARTO',
         styles: {
             active: {
                 radius: 10,
                 fillColor: '#3b82f6',
-                color: '#fff',
+                // Im Darkmode einen dunklen Rand für die Punkte, im Lightmode weiß
+                color: isDarkMode ? '#1e293b' : '#fff',
                 weight: 4,
                 fillOpacity: 1
             },
             inactive: {
                 radius: 6,
                 fillColor: '#64748b',
-                color: '#fff',
+                color: isDarkMode ? '#1e293b' : '#fff',
                 weight: 1,
                 fillOpacity: 0.6
             },
