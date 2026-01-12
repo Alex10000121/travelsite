@@ -434,5 +434,3 @@ if __name__ == '__main__':
     print("Starting local...", flush=True)
     start_background_services()
     app.run(host='0.0.0.0', port=5000, debug=True)
-elif current_process().name == 'MainProcess':
-    start_background_services()
