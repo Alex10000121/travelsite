@@ -53,6 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
         currentIndex: 0,
         mapMarkers: [],
         mapInstance: null,
+        clusterGroup: null, // Hinzugefügt für Cluster
         adminUpload: {
             clickTimer: null,
             tempPassword: null
@@ -103,16 +104,29 @@ document.addEventListener("DOMContentLoaded", () => {
         const coords = state.allPhotos.map(photo => [photo.lat, photo.lon]);
         L.polyline(coords, CONFIG.styles.line).addTo(state.mapInstance);
 
+        // MarkerClusterGroup erstellen
+        const markers = L.markerClusterGroup({
+            showCoverageOnHover: false,
+            spiderfyDistanceMultiplier: 2
+        });
+
         state.allPhotos.forEach((photo, index) => {
-            const marker = L.circleMarker([photo.lat, photo.lon], CONFIG.styles.inactive)
-                .addTo(state.mapInstance);
+            // Marker erstellen, aber NICHT direkt zur Map hinzufügen
+            const marker = L.circleMarker([photo.lat, photo.lon], CONFIG.styles.inactive);
 
             marker.on('click', () => {
                 state.currentIndex = index;
                 updateView();
             });
+
+            // Marker zur Cluster-Gruppe hinzufügen
+            markers.addLayer(marker);
             state.mapMarkers.push(marker);
         });
+
+        // Cluster-Gruppe zur Karte hinzufügen
+        state.mapInstance.addLayer(markers);
+        state.clusterGroup = markers;
     }
 
     // -------------------------------------------------------------------------
@@ -147,20 +161,34 @@ document.addEventListener("DOMContentLoaded", () => {
         setTextElement(dom.txtLocation, photo.location || "Unbekannt");
         setTextElement(dom.txtDate, photo.date_str || "Datum unbekannt");
 
-        state.mapInstance.flyTo(
-            [photo.lat, photo.lon],
-            10,
-            { animate: true, duration: CONFIG.animationDuration }
-        );
+        const targetMarker = state.mapMarkers[state.currentIndex];
 
-        state.mapMarkers.forEach((marker, index) => {
-            if (index === state.currentIndex) {
-                marker.setStyle(CONFIG.styles.active);
-                marker.bringToFront();
-            } else {
-                marker.setStyle(CONFIG.styles.inactive);
-            }
-        });
+        // Funktion zum Hervorheben des Markers
+        const highlightMarker = () => {
+            state.mapMarkers.forEach((marker, index) => {
+                if (index === state.currentIndex) {
+                    marker.setStyle(CONFIG.styles.active);
+                    marker.bringToFront();
+                } else {
+                    marker.setStyle(CONFIG.styles.inactive);
+                }
+            });
+        };
+
+        if (state.clusterGroup) {
+            // Cluster bei Bedarf öffnen
+            state.clusterGroup.zoomToShowLayer(targetMarker, () => {
+                highlightMarker();
+            });
+        } else {
+            // Fallback ohne Cluster
+            state.mapInstance.flyTo(
+                [photo.lat, photo.lon],
+                10,
+                { animate: true, duration: CONFIG.animationDuration }
+            );
+            highlightMarker();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -333,75 +361,4 @@ document.addEventListener("DOMContentLoaded", () => {
             dom.fileInput.value = "";
 
             setTimeout(() => {
-                if (dom.progressModal) dom.progressModal.classList.remove('show');
-
-                let msg = `Fertig! ${successCount} von ${totalFiles} Fotos erfolgreich.`;
-                if (errorCount > 0) msg += `\n(${errorCount} Fehler - z.B. fehlendes GPS)`;
-
-                alert(msg);
-                if (successCount > 0) location.reload();
-            }, 600);
-        });
-    }
-
-    // -------------------------------------------------------------------------
-    // 6. HELFER-FUNKTIONEN
-    // -------------------------------------------------------------------------
-
-    function setText(id, text) {
-        const el = document.getElementById(id);
-        if (el) el.innerText = text;
-    }
-
-    function setTextElement(element, text) {
-        if (element) element.innerText = text;
-    }
-
-    function extractCountryCode(locationString) {
-        if (!locationString) return "UNK";
-        const parts = locationString.split(',');
-        return parts.length > 1 ? parts[parts.length - 1].trim() : "UNK";
-    }
-
-    function animateValue(id, start, end, duration) {
-        const obj = document.getElementById(id);
-        if (!obj) return;
-        let startTimestamp = null;
-        const step = (timestamp) => {
-            if (!startTimestamp) startTimestamp = timestamp;
-            const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-            obj.innerHTML = Math.floor(progress * (end - start) + start).toLocaleString('de-DE');
-            if (progress < 1) window.requestAnimationFrame(step);
-        };
-        window.requestAnimationFrame(step);
-    }
-
-    // -------------------------------------------------------------------------
-    // 7. UI EVENT HANDLER
-    // -------------------------------------------------------------------------
-
-    if (dom.statsModal) {
-        if(dom.btnCloseStats) dom.btnCloseStats.addEventListener('click', () => dom.statsModal.classList.remove('show'));
-        dom.statsModal.addEventListener('click', (e) => {
-            if (e.target === dom.statsModal) dom.statsModal.classList.remove('show');
-        });
-    }
-
-    if (dom.tutorialModal && !localStorage.getItem('tutorial_seen')) {
-        setTimeout(() => dom.tutorialModal.classList.add('show'), 1000);
-    }
-
-    if (dom.btnCloseTutorial) {
-        dom.btnCloseTutorial.addEventListener('click', () => {
-            dom.tutorialModal.classList.remove('show');
-            localStorage.setItem('tutorial_seen', 'true');
-        });
-    }
-
-    if (dom.btnHelp) {
-        dom.btnHelp.addEventListener('click', () => {
-            if (dom.statsModal) dom.statsModal.classList.remove('show');
-            if (dom.tutorialModal) dom.tutorialModal.classList.add('show');
-        });
-    }
-});
+                if (dom.progressModal
