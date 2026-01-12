@@ -19,8 +19,9 @@
         <section class="gallery-panel" aria-label="Fotogalerie">
 
             <div class="header-controls">
+
                 <button class="info-btn help-pos" id="open-help" aria-label="Hilfe und Anleitung öffnen">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="10"></circle>
                         <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
@@ -29,8 +30,8 @@
 
                 <input type="file" id="file-input" accept="image/*" multiple style="display: none;" aria-hidden="true">
 
-                <button class="info-btn stats-pos" id="open-stats" aria-label="Statistik anzeigen (Admin Upload)">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                <button class="info-btn stats-pos" id="open-stats" aria-label="Statistik anzeigen">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="18" y1="20" x2="18" y2="10"></line>
                         <line x1="12" y1="20" x2="12" y2="4"></line>
                         <line x1="6" y1="20" x2="6" y2="14"></line>
@@ -39,30 +40,49 @@
             </div>
 
             <button class="nav-btn loc-prev" onclick="window.changeLocation(-1)" aria-label="Zum vorherigen Land springen" title="Vorheriges Land">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="18 15 12 9 6 15"></polyline>
+                </svg>
             </button>
 
             <button class="nav-btn prev" onclick="window.changePhoto(-1)" aria-label="Vorheriges Foto" title="Zurück">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
             </button>
 
             <figure class="photo-wrapper">
                 <img id="bg-photo" src="" alt="" role="presentation">
-
                 <img id="current-photo" src="" alt="Aktuelles Reisefoto">
 
                 <figcaption class="info-overlay">
-                    <h2 id="photo-location">Lade Reise...</h2>
-                    <p id="photo-date">...</p>
+                    <div id="info-standard">
+                        <h2 id="photo-location">Lade Reise...</h2>
+                        <p id="photo-date">...</p>
+                    </div>
+
+                    <div id="fix-interface" style="display: none; margin-top: 10px; pointer-events: auto; position: relative; z-index: 100;">
+                        <p style="color: #f87171; font-weight: bold; font-size: 0.9rem; margin-bottom: 8px;">
+                            ⚠️ Ort fehlt. Bitte Karte verschieben:
+                        </p>
+
+                        <button id="fix-save-btn" style="width: 100%; background: #3b82f6; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+                            📍 Position hier bestätigen
+                        </button>
+                    </div>
                 </figcaption>
             </figure>
 
             <button class="nav-btn next" onclick="window.changePhoto(1)" aria-label="Nächstes Foto" title="Weiter">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
             </button>
 
             <button class="nav-btn loc-next" onclick="window.changeLocation(1)" aria-label="Zum nächsten Land springen" title="Nächstes Land">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
             </button>
 
         </section>
@@ -104,7 +124,7 @@
         </div>
     </div>
 
-    <div id="progress-modal" class="modal-overlay" style="z-index: 2000;">
+    <div id="progress-modal" class="modal-overlay" style="z-index: 3000;">
         <div class="modal-content">
             <h3>Fotos werden hochgeladen...</h3>
             <div class="progress-container">

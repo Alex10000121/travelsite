@@ -14,11 +14,13 @@ from PIL.ExifTags import TAGS, GPSTAGS
 import reverse_geocoder as rg
 from werkzeug.utils import secure_filename
 
+# Logging Konfiguration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Konfiguration
 CONFIG = {
     'PHOTO_DIR': os.environ.get('PHOTO_DIR', './photos'),
     'THUMB_DIR': os.environ.get('THUMB_DIR', './data/thumbs'),
@@ -28,9 +30,12 @@ CONFIG = {
     'CONTACT_EMAIL': os.environ.get('CONTACT_EMAIL', 'deine.email@beispiel.de')
 }
 
+# Verzeichnisse erstellen
 os.makedirs(CONFIG['THUMB_DIR'], exist_ok=True)
 os.makedirs(os.path.dirname(CONFIG['DB_PATH']), exist_ok=True)
 
+
+# --- HELFER FUNKTIONEN ---
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     try:
@@ -117,6 +122,8 @@ def generate_thumbnail(original_path, thumb_path):
         return False
 
 
+# --- DB ---
+
 def get_db():
     conn = sqlite3.connect(CONFIG['DB_PATH'])
     conn.row_factory = sqlite3.Row
@@ -169,10 +176,11 @@ def track_visitor_count():
     return total
 
 
+# --- WORKER ---
+
 def scan_worker():
     time.sleep(3)
     logger.info("Scanner started.")
-
     abs_photo_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
 
     while True:
@@ -200,8 +208,13 @@ def scan_worker():
                                 timestamp, coords = extract_exif_data(full_path)
 
                                 final_ts = timestamp or os.path.getmtime(full_path)
-                                lat, lon = coords if coords else (0, 0)
-                                loc = get_location_name(lat, lon)
+
+                                if coords:
+                                    lat, lon = coords
+                                    loc = get_location_name(lat, lon)
+                                else:
+                                    lat, lon = None, None
+                                    loc = "Kein Standort"
 
                                 conn.execute(
                                     "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
@@ -214,9 +227,10 @@ def scan_worker():
 
         except Exception as e:
             logger.error(f"Scanner loop error: {e}")
-
         time.sleep(600)
 
+
+# --- ROUTES ---
 
 @app.route('/')
 def index():
@@ -255,13 +269,10 @@ def api_route():
 
             if i > 0:
                 p1, p2 = photos[i - 1], photos[i]
-
                 lat1, lon1 = p1.get('lat'), p1.get('lon')
                 lat2, lon2 = p2.get('lat'), p2.get('lon')
 
-                if (lat1 is not None and lon1 is not None and
-                        lat2 is not None and lon2 is not None):
-
+                if (lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None):
                     if lat1 != 0 and lat2 != 0:
                         total_km += calculate_distance(lat1, lon1, lat2, lon2)
 
@@ -287,8 +298,7 @@ def api_thumb(filename):
     if not os.path.commonpath([base_dir, requested_path]) == base_dir: abort(403)
 
     if request.args.get('size') == 'original':
-        if os.path.exists(requested_path):
-            return send_file(requested_path)
+        if os.path.exists(requested_path): return send_file(requested_path)
 
     flat_name = filename.replace('/', '_').replace('\\', '_')
     if not flat_name.lower().endswith('.jpg'): flat_name += '.jpg'
@@ -317,24 +327,23 @@ def upload_photo():
 
         ts, coords = extract_exif_data(save_path)
 
-        if not coords or math.isnan(coords[0]) or math.isnan(coords[1]):
-            
-            # KEIN GPS ODER KAPUTTE DATEN -> LÖSCHEN
-            if os.path.exists(save_path):
-                os.remove(save_path)
-            
-            logger.warning(f"Upload abgelehnt: {filename} hat ungültige GPS-Daten (nan).")
-            return jsonify({'error': 'Bild hat zwar GPS-Tags, aber keine gültigen Koordinaten (nan).'}), 400
+        # --- GPS CHECK ---
+        lat, lon = None, None
+        loc = "Kein Standort"
+        missing_gps = True  # Standardmäßig annehmen, dass GPS fehlt
 
-        # 3. Wenn wir hier sind, ist alles okay -> Thumbnail erstellen
+        if coords and not math.isnan(coords[0]) and not math.isnan(coords[1]):
+            lat, lon = coords
+            loc = get_location_name(lat, lon)
+            missing_gps = False
+            logger.info(f"EXIF: GPS gefunden für {filename}")
+        else:
+            logger.info(f"EXIF: Kein GPS für {filename}")
+
         thumb_path = os.path.join(CONFIG['THUMB_DIR'], unique_name + '.jpg')
         generate_thumbnail(save_path, thumb_path)
 
-        logger.info(f"EXIF: GPS gefunden für {filename}: {coords}")
-
         final_ts = ts or time.time()
-        lat, lon = coords
-        loc = get_location_name(lat, lon)
 
         with get_db() as conn:
             conn.execute(
@@ -342,37 +351,88 @@ def upload_photo():
                 (unique_name, lat, lon, final_ts, loc)
             )
 
-        return jsonify({'success': True, 'file': unique_name})
+        return jsonify({'success': True, 'file': unique_name, 'missing_gps': missing_gps})
 
     except Exception as e:
-        if 'save_path' in locals() and os.path.exists(save_path):
-            os.remove(save_path)
+        if 'save_path' in locals() and os.path.exists(save_path): os.remove(save_path)
         logger.error(f"Upload error: {e}")
         return jsonify({'error': str(e)}), 500
 
 
-# --- BACKGROUND SERVICES ---
+@app.route('/api/update_location', methods=['POST'])
+def update_location():
+    data = request.json
+    if data.get('admin_token') != CONFIG['ADMIN_TOKEN']:
+        return jsonify({'error': 'Falsches Passwort'}), 403
+
+    filename = data.get('filename')
+    lat = data.get('lat')
+    lon = data.get('lon')
+
+    if not filename or lat is None or lon is None:
+        return jsonify({'error': 'Daten fehlen'}), 400
+
+    try:
+        new_loc = get_location_name(lat, lon)
+        with get_db() as conn:
+            conn.execute("UPDATE photos SET lat = ?, lon = ?, location = ? WHERE filename = ?",
+                         (lat, lon, new_loc, filename))
+
+        logger.info(f"Location update for {filename}: {new_loc}")
+        return jsonify({'success': True, 'location': new_loc})
+
+    except Exception as e:
+        logger.error(f"Update location error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/delete', methods=['POST'])
+def delete_photo():
+    data = request.json
+    if data.get('admin_token') != CONFIG['ADMIN_TOKEN']:
+        return jsonify({'error': 'Falsches Passwort'}), 403
+
+    filename = data.get('filename')
+    if not filename: return jsonify({'error': 'Kein Dateiname'}), 400
+
+    try:
+
+        base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
+        file_path = os.path.abspath(os.path.join(base_dir, filename))
+
+
+        if not os.path.commonpath([base_dir, file_path]) == base_dir: abort(403)
+
+
+        flat_name = filename.replace('/', '_').replace('\\', '_')
+        if not flat_name.lower().endswith('.jpg'): flat_name += '.jpg'
+        thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
+
+
+        if os.path.exists(file_path): os.remove(file_path)
+        if os.path.exists(thumb_path): os.remove(thumb_path)
+
+
+        with get_db() as conn:
+            conn.execute("DELETE FROM photos WHERE filename=?", (filename,))
+
+        logger.info(f"Deleted photo: {filename}")
+        return jsonify({'success': True})
+
+    except Exception as e:
+        logger.error(f"Delete error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 
 def start_background_services():
-    """Initializes DB and starts background threads. Should only run in MainProcess."""
     init_db()
-
-    # Preload Geocoder to avoid lag on first upload
-    # This might still trigger multiprocessing, but since we are inside the guard, it's safer
     rg.search((0, 0))
-
     threading.Thread(target=scan_worker, daemon=True).start()
 
 
-# --- STARTUP LOGIC ---
-
 if __name__ == '__main__':
-    # Local Development
     print("Starting local...", flush=True)
     start_background_services()
     app.run(host='0.0.0.0', port=5000, debug=True)
-
 elif current_process().name == 'MainProcess':
-    # Docker / Gunicorn Production
-    # Only run this if we are the Gunicorn Worker, NOT the Reverse Geocoder Child Process
     start_background_services()
