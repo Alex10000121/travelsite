@@ -317,13 +317,14 @@ def upload_photo():
 
         ts, coords = extract_exif_data(save_path)
 
-        if not coords:
-
+        if not coords or math.isnan(coords[0]) or math.isnan(coords[1]):
+            
+            # KEIN GPS ODER KAPUTTE DATEN -> LÖSCHEN
             if os.path.exists(save_path):
                 os.remove(save_path)
-
-            logger.warning(f"Upload abgelehnt: {filename} hat keine GPS-Daten.")
-            return jsonify({'error': 'Keine GPS-Daten im Bild gefunden (Upload abgelehnt).'}), 400
+            
+            logger.warning(f"Upload abgelehnt: {filename} hat ungültige GPS-Daten (nan).")
+            return jsonify({'error': 'Bild hat zwar GPS-Tags, aber keine gültigen Koordinaten (nan).'}), 400
 
         # 3. Wenn wir hier sind, ist alles okay -> Thumbnail erstellen
         thumb_path = os.path.join(CONFIG['THUMB_DIR'], unique_name + '.jpg')
