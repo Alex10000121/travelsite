@@ -200,16 +200,21 @@ def index_photo(full_path, abs_photo_dir):
                 flat_name += '.jpg'
             thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
 
-            generate_thumbnail(full_path, thumb_path)
             timestamp, coords = extract_exif_data(full_path)
+
+            if not coords:
+                no_gps_dir = os.path.join(abs_photo_dir, 'no_gps')
+                os.makedirs(no_gps_dir, exist_ok=True)
+                dest = os.path.join(no_gps_dir, os.path.basename(full_path))
+                os.replace(full_path, dest)
+                logger.info(f"Moved to no_gps: {os.path.basename(full_path)}")
+                return
+
+            lat, lon = coords
+            loc = get_location_name(lat, lon)
             final_ts = timestamp or os.path.getmtime(full_path)
 
-            if coords:
-                lat, lon = coords
-                loc = get_location_name(lat, lon)
-            else:
-                lat, lon = None, None
-                loc = "Kein Standort"
+            generate_thumbnail(full_path, thumb_path)
 
             cursor = conn.execute(
                 "INSERT OR IGNORE INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
