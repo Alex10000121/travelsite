@@ -383,10 +383,11 @@ def upload_photo():
 
         file.save(save_path)
 
+        form_lat = request.form.get('lat')
+        form_lon = request.form.get('lon')
+        form_ts  = request.form.get('timestamp')
+
         try:
-            form_lat = request.form.get('lat')
-            form_lon = request.form.get('lon')
-            form_ts  = request.form.get('timestamp')
             if form_lat and form_lon:
                 lat_val = float(form_lat)
                 lon_val = float(form_lon)
@@ -409,18 +410,19 @@ def upload_photo():
 
         ts, coords = extract_exif_data(save_path)
 
-        # --- GPS CHECK ---
         lat, lon = None, None
         loc = "Kein Standort"
-        missing_gps = True  # Standardmäßig annehmen, dass GPS fehlt
+        missing_gps = True
 
         if coords and not math.isnan(coords[0]) and not math.isnan(coords[1]):
             lat, lon = coords
             loc = get_location_name(lat, lon)
             missing_gps = False
-            logger.info(f"EXIF: GPS gefunden für {filename}")
-        else:
-            logger.info(f"EXIF: Kein GPS für {filename}")
+        elif form_lat and form_lon:
+            lat = float(form_lat)
+            lon = float(form_lon)
+            loc = get_location_name(lat, lon)
+            missing_gps = False
 
         thumb_path = os.path.join(CONFIG['THUMB_DIR'], unique_name + '.jpg')
         generate_thumbnail(save_path, thumb_path)

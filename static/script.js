@@ -556,7 +556,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     if (res.ok) {
                         successCount++;
-                        if (json.missing_gps) {
+                        const hasFrontendGps = exifData.lat !== undefined && exifData.lon !== undefined;
+                        if (json.missing_gps && !hasFrontendGps) {
                             state.missingGpsQueue.push(json.file);
                         }
                     } else {
