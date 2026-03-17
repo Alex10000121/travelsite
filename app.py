@@ -6,13 +6,14 @@ import math
 import hashlib
 import logging
 from datetime import datetime
-from multiprocessing import current_process
 
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from PIL import Image, ImageOps
 from PIL.ExifTags import TAGS, GPSTAGS
 import reverse_geocoder as rg
 from werkzeug.utils import secure_filename
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 # Logging Konfiguration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -30,7 +31,8 @@ CONFIG = {
     'CONTACT_EMAIL': os.environ.get('CONTACT_EMAIL', 'deine.email@beispiel.de')
 }
 
-# Verzeichnisse erstellen
+SUPPORTED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heic')
+
 os.makedirs(CONFIG['THUMB_DIR'], exist_ok=True)
 os.makedirs(os.path.dirname(CONFIG['DB_PATH']), exist_ok=True)
 
@@ -178,56 +180,101 @@ def track_visitor_count():
 
 # --- WORKER ---
 
-def scan_worker():
-    time.sleep(3)
-    logger.info("Scanner started.")
-    abs_photo_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
+def index_photo(full_path, abs_photo_dir):
+    if '@eaDir' in full_path:
+        return
+    if not full_path.lower().endswith(SUPPORTED_EXTENSIONS):
+        return
 
-    while True:
+    rel_path = os.path.relpath(full_path, abs_photo_dir).replace('\\', '/')
+    if rel_path.startswith('./'):
+        rel_path = rel_path[2:]
+
+    try:
+        with get_db() as conn:
+            if conn.execute("SELECT 1 FROM photos WHERE filename=?", (rel_path,)).fetchone():
+                return
+
+            flat_name = rel_path.replace('/', '_').replace('\\', '_')
+            if not flat_name.lower().endswith('.jpg'):
+                flat_name += '.jpg'
+            thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
+
+            generate_thumbnail(full_path, thumb_path)
+            timestamp, coords = extract_exif_data(full_path)
+            final_ts = timestamp or os.path.getmtime(full_path)
+
+            if coords:
+                lat, lon = coords
+                loc = get_location_name(lat, lon)
+            else:
+                lat, lon = None, None
+                loc = "Kein Standort"
+
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                (rel_path, lat, lon, final_ts, loc)
+            )
+            conn.commit()
+            if cursor.rowcount:
+                logger.info(f"Indexed: {rel_path} (GPS: {lat}, {lon})")
+    except Exception as e:
+        logger.error(f"Indexing error for {full_path}: {e}")
+
+
+def wait_for_file(path, retries=10, delay=0.5):
+    for _ in range(retries):
         try:
-            changes_detected = False
-            with get_db() as conn:
-                for root, dirs, files in os.walk(abs_photo_dir):
-                    if '@eaDir' in root: continue
+            with open(path, 'rb'):
+                return True
+        except OSError:
+            time.sleep(delay)
+    logger.warning(f"File not accessible after {retries} retries: {path}")
+    return False
 
-                    for file in files:
-                        if file.lower().endswith(('.jpg', '.jpeg', '.png', '.heic')):
-                            full_path = os.path.join(root, file)
 
-                            rel_path = os.path.relpath(full_path, abs_photo_dir).replace('\\', '/')
-                            if rel_path.startswith('./'): rel_path = rel_path[2:]
+class PhotoEventHandler(FileSystemEventHandler):
+    def __init__(self, abs_photo_dir):
+        self.abs_photo_dir = abs_photo_dir
+        self._pending = {}
+        self._lock = threading.Lock()
 
-                            exists = conn.execute("SELECT 1 FROM photos WHERE filename=?", (rel_path,)).fetchone()
+    def _schedule(self, path):
+        with self._lock:
+            existing = self._pending.pop(path, None)
+            if existing:
+                existing.cancel()
+            timer = threading.Timer(2.0, self._process, args=(path,))
+            self._pending[path] = timer
+            timer.start()
 
-                            if not exists:
-                                flat_name = rel_path.replace('/', '_').replace('\\', '_')
-                                if not flat_name.lower().endswith('.jpg'): flat_name += '.jpg'
-                                thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
+    def _process(self, path):
+        with self._lock:
+            self._pending.pop(path, None)
+        if wait_for_file(path):
+            index_photo(path, self.abs_photo_dir)
 
-                                generate_thumbnail(full_path, thumb_path)
-                                timestamp, coords = extract_exif_data(full_path)
+    def on_created(self, event):
+        if not event.is_directory:
+            self._schedule(event.src_path)
 
-                                final_ts = timestamp or os.path.getmtime(full_path)
+    def on_modified(self, event):
+        if not event.is_directory:
+            self._schedule(event.src_path)
 
-                                if coords:
-                                    lat, lon = coords
-                                    loc = get_location_name(lat, lon)
-                                else:
-                                    lat, lon = None, None
-                                    loc = "Kein Standort"
+    def on_moved(self, event):
+        if not event.is_directory:
+            self._schedule(event.dest_path)
 
-                                conn.execute(
-                                    "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                                    (rel_path, lat, lon, final_ts, loc)
-                                )
-                                logger.info(f"Indexed: {rel_path} (GPS: {lat}, {lon})")
-                                changes_detected = True
 
-                if changes_detected: conn.commit()
-
-        except Exception as e:
-            logger.error(f"Scanner loop error: {e}")
-        time.sleep(600)
+def initial_scan(abs_photo_dir):
+    logger.info("Initial scan started.")
+    for root, dirs, files in os.walk(abs_photo_dir):
+        if '@eaDir' in root:
+            continue
+        for file in files:
+            index_photo(os.path.join(root, file), abs_photo_dir)
+    logger.info("Initial scan complete.")
 
 
 # --- ROUTES ---
@@ -433,7 +480,18 @@ def check_login():
 def start_background_services():
     init_db()
     rg.search((0, 0))
-    threading.Thread(target=scan_worker, daemon=True).start()
+
+    abs_photo_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
+    os.makedirs(abs_photo_dir, exist_ok=True)
+
+    threading.Thread(target=initial_scan, args=(abs_photo_dir,), daemon=True).start()
+
+    event_handler = PhotoEventHandler(abs_photo_dir)
+    observer = Observer()
+    observer.schedule(event_handler, abs_photo_dir, recursive=True)
+    observer.daemon = True
+    observer.start()
+    logger.info(f"Watching {abs_photo_dir} for new photos.")
 
 
 if __name__ == '__main__':
