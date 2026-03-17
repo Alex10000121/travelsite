@@ -35,4 +35,4 @@ EXPOSE 5000
 
 USER appuser
 
-CMD ["sh", "-c", "python -c 'import app; app.start_background_services(); import time; time.sleep(31536000)' & gunicorn -w 3 -b 0.0.0.0:5000 app:app"]
+CMD ["sh", "-c", "python -c 'import app; app.init_db()' && python -c 'import app; app.start_background_services(); import time; time.sleep(31536000)' & gunicorn -w 3 -b 0.0.0.0:5000 app:app"]

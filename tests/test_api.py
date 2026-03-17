@@ -259,6 +259,23 @@ class TestUploadResponseFields:
         assert abs(data['lat'] - 48.8566) < 0.01
         assert abs(data['lon'] - 2.3522) < 0.01
 
+    def test_thumbnail_name_matches_serve_and_delete_path(self, client, app):
+        import app as flask_module
+        import os
+        response = client.post('/api/upload', data={
+            'admin_token': 'test_admin',
+            'photo': (self._make_jpeg_bytes(), 'mytrip.jpg'),
+        }, content_type='multipart/form-data')
+        assert response.status_code == 200
+        uploaded_file = response.get_json()['file']
+
+        thumb_dir = flask_module.CONFIG['THUMB_DIR']
+        expected_thumb = os.path.join(thumb_dir, uploaded_file)
+        double_ext_thumb = os.path.join(thumb_dir, uploaded_file + '.jpg')
+
+        assert os.path.exists(expected_thumb), "Thumbnail fehlt unter erwartetem Pfad"
+        assert not os.path.exists(double_ext_thumb), "Thumbnail doppelt mit .jpg.jpg angelegt"
+
     def test_upload_without_gps_returns_null_lat_lon(self, client):
         response = client.post('/api/upload', data={
             'admin_token': 'test_admin',

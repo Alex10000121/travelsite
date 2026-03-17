@@ -429,7 +429,8 @@ def upload_photo():
         if loc == "Unbekannt" and lat is not None:
             loc = f"{lat:.2f}, {lon:.2f}"
 
-        thumb_path = os.path.join(CONFIG['THUMB_DIR'], unique_name + '.jpg')
+        flat_thumb_name = unique_name if unique_name.lower().endswith('.jpg') else unique_name + '.jpg'
+        thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_thumb_name)
         generate_thumbnail(save_path, thumb_path)
 
         final_ts = ts or time.time()
