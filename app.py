@@ -100,7 +100,7 @@ def extract_exif_data(image_path):
 
 
 def get_location_name(lat, lon):
-    if not lat or not lon: return "Unbekannt"
+    if lat is None or lon is None: return "Unbekannt"
     try:
         results = rg.search((lat, lon))
         if results:
@@ -187,7 +187,7 @@ def track_visitor_count():
 # --- WORKER ---
 
 def index_photo(full_path, abs_photo_dir):
-    if '@eaDir' in full_path:
+    if '@eaDir' in full_path or os.sep + 'no_gps' + os.sep in full_path or full_path.endswith(os.sep + 'no_gps'):
         return
     if not full_path.lower().endswith(SUPPORTED_EXTENSIONS):
         return
@@ -309,7 +309,7 @@ def api_route():
 
         for r in rows:
             p = dict(r)
-            p['date_str'] = datetime.fromtimestamp(p['timestamp']).strftime('%d.%m.%Y')
+            p['date_str'] = datetime.fromtimestamp(p['timestamp']).strftime('%d.%m.%Y') if p['timestamp'] else ''
             photos.append(p)
     except Exception as e:
         logger.error(f"API Route error: {e}")
@@ -334,7 +334,9 @@ def api_route():
                     if lat1 != 0 and lat2 != 0:
                         total_km += calculate_distance(lat1, lon1, lat2, lon2)
 
-        days = int((photos[-1]['timestamp'] - photos[0]['timestamp']) / 86400) + 1
+        ts_first = photos[0]['timestamp']
+        ts_last = photos[-1]['timestamp']
+        days = int((ts_last - ts_first) / 86400) + 1 if ts_first is not None and ts_last is not None else 0
 
     return jsonify({
         "stats": {
@@ -434,11 +436,11 @@ def upload_photo():
 
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
                 (unique_name, lat, lon, final_ts, loc)
             )
 
-        return jsonify({'success': True, 'file': unique_name, 'location': loc, 'missing_gps': missing_gps})
+        return jsonify({'success': True, 'file': unique_name, 'location': loc, 'missing_gps': missing_gps, 'lat': lat, 'lon': lon})
 
     except Exception as e:
         if 'save_path' in locals() and os.path.exists(save_path): os.remove(save_path)

@@ -189,6 +189,89 @@ class TestUploadWithFormCoords:
             assert response.status_code == 200
 
 
+class TestUploadIdempotency:
+    def _make_jpeg_bytes(self):
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
+        buf.seek(0)
+        return buf
+
+    def test_duplicate_filename_in_db_does_not_crash_upload(self, client, app):
+        import app as flask_module
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('duplicate.jpg', 48.0, 11.0, 1700000000.0, 'München, DE')
+            )
+            conn.commit()
+
+        response = client.post('/api/upload', data={
+            'admin_token': 'test_admin',
+            'photo': (self._make_jpeg_bytes(), 'duplicate.jpg'),
+        }, content_type='multipart/form-data')
+
+        assert response.status_code == 200
+
+
+class TestApiRouteNullTimestamp:
+    def test_null_timestamp_in_db_does_not_crash(self, client):
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('null_ts.jpg', 48.0, 11.0, None, 'München, DE')
+            )
+            conn.commit()
+
+        response = client.get('/api/route?token=test_token')
+        assert response.status_code == 200
+        data = response.get_json()
+        photo = next(p for p in data['photos'] if p['filename'] == 'null_ts.jpg')
+        assert photo['date_str'] == ''
+
+
+class TestUploadResponseFields:
+    def _make_jpeg_bytes(self):
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
+        buf.seek(0)
+        return buf
+
+    def test_upload_response_contains_lat_lon(self, client):
+        with patch('piexif.load') as mock_load, \
+             patch('piexif.dump', return_value=b'exif'), \
+             patch('piexif.insert'):
+            mock_load.return_value = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
+
+            response = client.post('/api/upload', data={
+                'admin_token': 'test_admin',
+                'photo': (self._make_jpeg_bytes(), 'with_coords.jpg'),
+                'lat': '48.8566',
+                'lon': '2.3522',
+            }, content_type='multipart/form-data')
+
+        data = response.get_json()
+        assert 'lat' in data
+        assert 'lon' in data
+        assert abs(data['lat'] - 48.8566) < 0.01
+        assert abs(data['lon'] - 2.3522) < 0.01
+
+    def test_upload_without_gps_returns_null_lat_lon(self, client):
+        response = client.post('/api/upload', data={
+            'admin_token': 'test_admin',
+            'photo': (self._make_jpeg_bytes(), 'no_gps.jpg'),
+        }, content_type='multipart/form-data')
+
+        data = response.get_json()
+        assert 'lat' in data
+        assert 'lon' in data
+        assert data['lat'] is None
+        assert data['lon'] is None
+
+
 class TestDeletePhoto:
     def test_invalid_token_returns_403(self, client):
         response = client.post('/api/delete',

@@ -291,6 +291,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    let displayImageTimer = null;
     function displayImage(filename) {
         const imgEl = dom.currentPhoto;
         const bgEl = dom.bgPhoto;
@@ -301,7 +302,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (bgEl) bgEl.style.opacity = 0;
 
-        setTimeout(() => {
+        clearTimeout(displayImageTimer);
+        displayImageTimer = setTimeout(() => {
             const thumbUrl = `/api/thumb/${filename}?token=${TOKEN}`;
             if (imgEl) {
                 imgEl.src = thumbUrl;
@@ -565,8 +567,8 @@ document.addEventListener("DOMContentLoaded", () => {
                             const d  = ts ? new Date(ts * 1000) : null;
                             uploadedPhotos.push({
                                 filename:    json.file,
-                                lat:         exifData.lat ?? null,
-                                lon:         exifData.lon ?? null,
+                                lat:         exifData.lat ?? json.lat ?? null,
+                                lon:         exifData.lon ?? json.lon ?? null,
                                 location:    json.location || '',
                                 timestamp:   ts,
                                 date_str:    d ? `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}` : '',

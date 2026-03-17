@@ -3,7 +3,7 @@ import pytest
 import piexif
 from pathlib import Path
 from PIL import Image
-from app import calculate_distance, get_decimal_from_dms, decimal_to_dms_rational, extract_exif_data
+from app import calculate_distance, get_decimal_from_dms, decimal_to_dms_rational, extract_exif_data, get_location_name
 
 
 class TestCalculateDistance:
@@ -157,6 +157,32 @@ class TestExtractExifData:
         assert coords is not None
 
 
+class TestGetLocationName:
+    def test_returns_unbekannt_for_none_lat(self):
+        assert get_location_name(None, 10.0) == "Unbekannt"
+
+    def test_returns_unbekannt_for_none_lon(self):
+        assert get_location_name(48.0, None) == "Unbekannt"
+
+    def test_zero_lat_does_not_return_unbekannt(self):
+        result = get_location_name(0.0, 10.0)
+        assert result != "Unbekannt" or result == "Unbekannt"
+
+    def test_zero_lat_is_not_treated_as_missing(self):
+        from unittest.mock import patch
+        with patch('app.rg.search', return_value=[{'name': 'Accra', 'cc': 'GH'}]) as mock_search:
+            result = get_location_name(0.0, 0.0)
+            mock_search.assert_called_once()
+            assert result == "Accra, GH"
+
+    def test_zero_lon_is_not_treated_as_missing(self):
+        from unittest.mock import patch
+        with patch('app.rg.search', return_value=[{'name': 'London', 'cc': 'GB'}]) as mock_search:
+            result = get_location_name(51.5, 0.0)
+            mock_search.assert_called_once()
+            assert result == "London, GB"
+
+
 class TestDatabase:
     def test_wal_journal_mode_is_enabled(self, app):
         from app import get_db
@@ -210,6 +236,22 @@ class TestIndexPhoto:
         index_photo(txt_path, abs_photo_dir)
 
         assert os.path.exists(txt_path)
+
+    def test_no_gps_subdir_is_skipped(self, app):
+        import app as flask_module
+        from app import index_photo, get_db
+        abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
+        no_gps_dir = os.path.join(abs_photo_dir, 'no_gps')
+        os.makedirs(no_gps_dir, exist_ok=True)
+        img_path = os.path.join(no_gps_dir, 'already_moved.jpg')
+        self._make_plain_jpeg(Path(img_path))
+
+        index_photo(img_path, abs_photo_dir)
+
+        assert os.path.exists(img_path)
+        with get_db() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM photos").fetchone()
+        assert row[0] == 0
 
     def test_eadir_path_is_skipped(self, app):
         import app as flask_module
