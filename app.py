@@ -127,8 +127,9 @@ def generate_thumbnail(original_path, thumb_path):
 # --- DB ---
 
 def get_db():
-    conn = sqlite3.connect(CONFIG['DB_PATH'])
+    conn = sqlite3.connect(CONFIG['DB_PATH'], timeout=20)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
