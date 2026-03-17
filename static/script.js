@@ -532,6 +532,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (dom.progressBar) dom.progressBar.style.width = '0%';
 
             state.missingGpsQueue = [];
+            const uploadedPhotos = [];
             let successCount = 0;
             let errorCount = 0;
             const totalFiles = files.length;
@@ -559,6 +560,18 @@ document.addEventListener("DOMContentLoaded", () => {
                         const hasFrontendGps = exifData.lat !== undefined && exifData.lon !== undefined;
                         if (json.missing_gps && !hasFrontendGps) {
                             state.missingGpsQueue.push(json.file);
+                        } else {
+                            const ts = exifData.timestamp ?? null;
+                            const d  = ts ? new Date(ts * 1000) : null;
+                            uploadedPhotos.push({
+                                filename:    json.file,
+                                lat:         exifData.lat ?? null,
+                                lon:         exifData.lon ?? null,
+                                location:    json.location || '',
+                                timestamp:   ts,
+                                date_str:    d ? `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}` : '',
+                                countryCode: extractCountryCode(json.location || '')
+                            });
                         }
                     } else {
                         errorCount++;
@@ -583,14 +596,20 @@ document.addEventListener("DOMContentLoaded", () => {
             if (dom.progressModal) dom.progressModal.classList.remove('show');
 
             if (state.missingGpsQueue.length > 0) {
-                // Bei fehlendem GPS halten wir das Passwort noch kurz für den Fix-Prozess
                 startFixingProcess(password);
             } else {
-                state.adminUpload.tempPassword = null; // Sicherheit: Passwort vergessen
+                state.adminUpload.tempPassword = null;
 
                 if (successCount > 0) {
-                    alert(`Fertig! ${successCount} hochgeladen.`);
-                    location.reload();
+                    uploadedPhotos.forEach(p => {
+                        state.allPhotos.push(p);
+                        state.mapMarkers.push(null);
+                    });
+                    if (uploadedPhotos.length > 0) {
+                        state.currentIndex = state.allPhotos.length - 1;
+                        updateView();
+                    }
+                    setTimeout(() => location.reload(), 1500);
                 } else if (errorCount > 0) {
                     alert("Es traten Fehler auf (siehe Konsole).");
                 }

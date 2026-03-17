@@ -85,6 +85,23 @@ class TestUploadPhoto:
         assert data['success'] is True
         assert 'file' in data
 
+    def test_upload_response_contains_location_field(self, client):
+        response = client.post('/api/upload', data={
+            'admin_token': 'test_admin',
+            'photo': (self._make_jpeg_bytes(), 'test.jpg')
+        }, content_type='multipart/form-data')
+        assert response.status_code == 200
+        assert 'location' in response.get_json()
+
+    def test_upload_response_contains_missing_gps_field(self, client):
+        response = client.post('/api/upload', data={
+            'admin_token': 'test_admin',
+            'photo': (self._make_jpeg_bytes(), 'test.jpg')
+        }, content_type='multipart/form-data')
+        data = response.get_json()
+        assert 'missing_gps' in data
+        assert data['missing_gps'] is True
+
 
 class TestUploadWithFormCoords:
     def _make_jpeg_bytes(self):
@@ -124,7 +141,29 @@ class TestUploadWithFormCoords:
             }, content_type='multipart/form-data')
 
             assert response.status_code == 200
-            assert response.get_json()['success'] is True
+            data = response.get_json()
+            assert data['success'] is True
+            assert data['missing_gps'] is False
+            assert 'location' in data
+
+    def test_upload_with_coords_location_is_not_unbekannt(self, client):
+        with patch('piexif.load') as mock_load, \
+             patch('piexif.dump', return_value=b'exif'), \
+             patch('piexif.insert'), \
+             patch('app.get_location_name', return_value='Unbekannt'):
+            mock_load.return_value = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
+
+            response = client.post('/api/upload', data={
+                'admin_token': 'test_admin',
+                'photo': (self._make_jpeg_bytes(), 'coords.jpg'),
+                'lat': '48.8566',
+                'lon': '2.3522',
+            }, content_type='multipart/form-data')
+
+            data = response.get_json()
+            assert data['location'] != 'Unbekannt'
+            assert '48.86' in data['location']
+            assert '2.35' in data['location']
 
     def test_piexif_insert_not_called_without_coords(self, client):
         with patch('piexif.insert') as mock_insert:

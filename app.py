@@ -424,6 +424,9 @@ def upload_photo():
             loc = get_location_name(lat, lon)
             missing_gps = False
 
+        if loc == "Unbekannt" and lat is not None:
+            loc = f"{lat:.2f}, {lon:.2f}"
+
         thumb_path = os.path.join(CONFIG['THUMB_DIR'], unique_name + '.jpg')
         generate_thumbnail(save_path, thumb_path)
 
@@ -435,7 +438,7 @@ def upload_photo():
                 (unique_name, lat, lon, final_ts, loc)
             )
 
-        return jsonify({'success': True, 'file': unique_name, 'missing_gps': missing_gps})
+        return jsonify({'success': True, 'file': unique_name, 'location': loc, 'missing_gps': missing_gps})
 
     except Exception as e:
         if 'save_path' in locals() and os.path.exists(save_path): os.remove(save_path)
