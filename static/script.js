@@ -542,9 +542,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     dom.progressText.innerText = `Lade Bild ${i + 1} von ${totalFiles} hoch...`;
                 }
 
+                const exifData = await readExifFromFile(files[i]);
                 const formData = new FormData();
                 formData.append('photo', files[i]);
                 formData.append('admin_token', password);
+                if (exifData.lat !== undefined) formData.append('lat', exifData.lat);
+                if (exifData.lon !== undefined) formData.append('lon', exifData.lon);
+                if (exifData.timestamp !== undefined) formData.append('timestamp', exifData.timestamp);
 
                 try {
                     const res = await fetch('/api/upload', { method: 'POST', body: formData });
@@ -681,6 +685,39 @@ document.addEventListener("DOMContentLoaded", () => {
     // -------------------------------------------------------------------------
     // 9. HELFER & MODAL EVENTS
     // -------------------------------------------------------------------------
+
+    function dmsToDecimal(dms, ref) {
+        const decimal = dms[0] + dms[1] / 60 + dms[2] / 3600;
+        return (ref === 'S' || ref === 'W') ? -decimal : decimal;
+    }
+
+    function parseExifDate(str) {
+        const [datePart, timePart] = str.split(' ');
+        const [year, month, day] = datePart.split(':').map(Number);
+        const [hour, min, sec] = timePart.split(':').map(Number);
+        return Math.floor(new Date(year, month - 1, day, hour, min, sec).getTime() / 1000);
+    }
+
+    function readExifFromFile(file) {
+        return new Promise((resolve) => {
+            EXIF.getData(file, function () {
+                const latDms  = EXIF.getTag(this, 'GPSLatitude');
+                const latRef  = EXIF.getTag(this, 'GPSLatitudeRef');
+                const lonDms  = EXIF.getTag(this, 'GPSLongitude');
+                const lonRef  = EXIF.getTag(this, 'GPSLongitudeRef');
+                const dateStr = EXIF.getTag(this, 'DateTimeOriginal');
+                const result  = {};
+                if (latDms && lonDms && latRef && lonRef) {
+                    result.lat = dmsToDecimal(latDms, latRef);
+                    result.lon = dmsToDecimal(lonDms, lonRef);
+                }
+                if (dateStr) {
+                    result.timestamp = parseExifDate(dateStr);
+                }
+                resolve(result);
+            });
+        });
+    }
 
     function setText(id, text) {
         const el = document.getElementById(id);

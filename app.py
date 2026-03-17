@@ -14,6 +14,7 @@ import reverse_geocoder as rg
 from werkzeug.utils import secure_filename
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+import piexif
 
 # Logging Konfiguration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -57,6 +58,14 @@ def get_decimal_from_dms(dms, ref):
     if ref in ['S', 'W']:
         degrees = -degrees
     return degrees
+
+
+def decimal_to_dms_rational(value):
+    value = abs(value)
+    degrees = int(value)
+    minutes = int((value - degrees) * 60)
+    seconds = int(round((value - degrees - minutes / 60) * 3600 * 1000))
+    return ((degrees, 1), (minutes, 1), (seconds, 1000))
 
 
 def extract_exif_data(image_path):
@@ -373,6 +382,30 @@ def upload_photo():
         save_path = os.path.join(CONFIG['PHOTO_DIR'], unique_name)
 
         file.save(save_path)
+
+        try:
+            form_lat = request.form.get('lat')
+            form_lon = request.form.get('lon')
+            form_ts  = request.form.get('timestamp')
+            if form_lat and form_lon:
+                lat_val = float(form_lat)
+                lon_val = float(form_lon)
+                try:
+                    exif_dict = piexif.load(save_path)
+                except Exception:
+                    exif_dict = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
+                exif_dict['GPS'] = {
+                    piexif.GPSIFD.GPSLatitudeRef:  b'N' if lat_val >= 0 else b'S',
+                    piexif.GPSIFD.GPSLatitude:     decimal_to_dms_rational(lat_val),
+                    piexif.GPSIFD.GPSLongitudeRef: b'E' if lon_val >= 0 else b'W',
+                    piexif.GPSIFD.GPSLongitude:    decimal_to_dms_rational(lon_val),
+                }
+                if form_ts:
+                    dt_str = datetime.fromtimestamp(float(form_ts)).strftime('%Y:%m:%d %H:%M:%S').encode()
+                    exif_dict['Exif'][piexif.ExifIFD.DateTimeOriginal] = dt_str
+                piexif.insert(piexif.dump(exif_dict), save_path)
+        except Exception:
+            pass
 
         ts, coords = extract_exif_data(save_path)
 

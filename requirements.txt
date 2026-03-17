@@ -4,3 +4,4 @@ reverse_geocoder
 gunicorn
 werkzeug
 watchdog
+piexif

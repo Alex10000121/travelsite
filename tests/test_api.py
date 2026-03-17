@@ -1,6 +1,7 @@
 import io
 import json
 import pytest
+from unittest.mock import patch
 
 
 class TestIndexRoute:
@@ -83,6 +84,70 @@ class TestUploadPhoto:
         data = response.get_json()
         assert data['success'] is True
         assert 'file' in data
+
+
+class TestUploadWithFormCoords:
+    def _make_jpeg_bytes(self):
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
+        buf.seek(0)
+        return buf
+
+    def test_piexif_insert_called_when_coords_provided(self, client):
+        with patch('piexif.load') as mock_load, \
+             patch('piexif.dump', return_value=b'exif'), \
+             patch('piexif.insert') as mock_insert:
+            mock_load.return_value = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
+
+            client.post('/api/upload', data={
+                'admin_token': 'test_admin',
+                'photo': (self._make_jpeg_bytes(), 'coords.jpg'),
+                'lat': '48.8566',
+                'lon': '2.3522',
+                'timestamp': '1689418800',
+            }, content_type='multipart/form-data')
+
+            mock_insert.assert_called_once()
+
+    def test_upload_with_coords_returns_success(self, client):
+        with patch('piexif.load') as mock_load, \
+             patch('piexif.dump', return_value=b'exif'), \
+             patch('piexif.insert'):
+            mock_load.return_value = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
+
+            response = client.post('/api/upload', data={
+                'admin_token': 'test_admin',
+                'photo': (self._make_jpeg_bytes(), 'coords.jpg'),
+                'lat': '48.8566',
+                'lon': '2.3522',
+            }, content_type='multipart/form-data')
+
+            assert response.status_code == 200
+            assert response.get_json()['success'] is True
+
+    def test_piexif_insert_not_called_without_coords(self, client):
+        with patch('piexif.insert') as mock_insert:
+            client.post('/api/upload', data={
+                'admin_token': 'test_admin',
+                'photo': (self._make_jpeg_bytes(), 'no_coords.jpg'),
+            }, content_type='multipart/form-data')
+
+            mock_insert.assert_not_called()
+
+    def test_piexif_load_failure_is_silently_handled(self, client):
+        with patch('piexif.load', side_effect=Exception('invalid')), \
+             patch('piexif.dump', return_value=b'exif'), \
+             patch('piexif.insert'):
+
+            response = client.post('/api/upload', data={
+                'admin_token': 'test_admin',
+                'photo': (self._make_jpeg_bytes(), 'bad_exif.jpg'),
+                'lat': '48.8566',
+                'lon': '2.3522',
+            }, content_type='multipart/form-data')
+
+            assert response.status_code == 200
 
 
 class TestDeletePhoto:
