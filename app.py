@@ -65,7 +65,7 @@ def extract_exif_data(image_path):
 
     try:
         with Image.open(image_path) as img:
-            exif = img._getexif()
+            exif = img.getexif()
             if not exif:
                 return None, None
 
@@ -77,11 +77,7 @@ def extract_exif_data(image_path):
                 except ValueError:
                     pass
 
-            gps_info = {}
-            for k, v in exif.items():
-                if TAGS.get(k) == "GPSInfo":
-                    for t in v:
-                        gps_info[GPSTAGS.get(t, t)] = v[t]
+            gps_info = {GPSTAGS.get(t, t): v for t, v in exif.get_ifd(0x8825).items()}
 
             if 'GPSLatitude' in gps_info and 'GPSLongitude' in gps_info:
                 lat = get_decimal_from_dms(gps_info['GPSLatitude'], gps_info['GPSLatitudeRef'])
