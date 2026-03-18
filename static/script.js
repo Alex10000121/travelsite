@@ -115,7 +115,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // GPS Fix & Queue
         missingGpsQueue: [],
         isFixingMode: false,
-        fixMarker: null
+        fixMarker: null,
+        locationSelectResolve: null
     };
 
     // -----------------------------------------------------------------------------
@@ -413,6 +414,29 @@ document.addEventListener("DOMContentLoaded", () => {
     // 7. ADMIN UPLOAD & LOGIN (SICHERHEITS-UPDATE)
     // -------------------------------------------------------------------------
 
+    async function readExifFromFile(file) {
+        try {
+            if (typeof exifr === 'undefined') return null;
+            const gps = await exifr.gps(file);
+            if (gps && isFinite(gps.latitude) && isFinite(gps.longitude)) {
+                return { lat: gps.latitude, lon: gps.longitude };
+            }
+        } catch (e) {
+            console.warn('exifr GPS read failed:', e);
+        }
+        return null;
+    }
+
+    function pickLocation() {
+        return new Promise((resolve) => {
+            state.locationSelectResolve = resolve;
+            if (dom.infoStandard) dom.infoStandard.style.display = 'none';
+            if (dom.fixInterface) dom.fixInterface.style.display = 'block';
+            const center = state.mapInstance.getCenter();
+            setFixMarker(center.lat, center.lng);
+        });
+    }
+
     if (dom.btnStats && dom.fileInput) {
         // Logik für den Statistik-Button (Upload via Doppelklick)
         dom.btnStats.addEventListener('click', (e) => {
@@ -545,13 +569,39 @@ document.addEventListener("DOMContentLoaded", () => {
                     dom.progressText.innerText = `Lade Bild ${i + 1} von ${totalFiles} hoch...`;
                 }
 
-                const exifData = await readExifFromFile(files[i]);
+                const file = files[i];
+
+                // Check GPS in EXIF before upload; if missing, ask user to pick location first
+                let formLat = null, formLon = null;
+                const gpsFromExif = await readExifFromFile(file);
+                if (gpsFromExif) {
+                    formLat = gpsFromExif.lat;
+                    formLon = gpsFromExif.lon;
+                } else {
+                    if (dom.progressModal) dom.progressModal.classList.remove('show');
+
+                    const previewUrl = URL.createObjectURL(file);
+                    if (dom.currentPhoto) { dom.currentPhoto.src = previewUrl; dom.currentPhoto.style.opacity = 1; }
+                    if (dom.bgPhoto) { dom.bgPhoto.src = previewUrl; dom.bgPhoto.style.opacity = 1; }
+                    if (dom.txtLocation) dom.txtLocation.innerText = file.name;
+                    if (dom.txtDate) dom.txtDate.innerText = `Bild ${i + 1} von ${totalFiles} – Ort wählen`;
+
+                    const picked = await pickLocation();
+                    URL.revokeObjectURL(previewUrl);
+                    formLat = picked.lat;
+                    formLon = picked.lon;
+
+                    if (dom.progressModal) dom.progressModal.classList.add('show');
+                    if (dom.progressText) dom.progressText.innerText = `Lade Bild ${i + 1} von ${totalFiles} hoch...`;
+                }
+
                 const formData = new FormData();
-                formData.append('photo', files[i]);
+                formData.append('photo', file);
                 formData.append('admin_token', password);
-                if (exifData.lat !== undefined) formData.append('lat', exifData.lat);
-                if (exifData.lon !== undefined) formData.append('lon', exifData.lon);
-                if (exifData.timestamp !== undefined) formData.append('timestamp', exifData.timestamp);
+                if (formLat !== null && formLon !== null) {
+                    formData.append('lat', formLat);
+                    formData.append('lon', formLon);
+                }
 
                 try {
                     const res = await fetch('/api/upload', { method: 'POST', body: formData });
@@ -559,16 +609,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
                     if (res.ok) {
                         successCount++;
-                        const hasFrontendGps = exifData.lat !== undefined && exifData.lon !== undefined;
-                        if (json.missing_gps && !hasFrontendGps) {
-                            state.missingGpsQueue.push(json.file);
-                        } else {
-                            const ts = exifData.timestamp ?? null;
+                        {
+                            const ts = json.timestamp ?? null;
                             const d  = ts ? new Date(ts * 1000) : null;
                             uploadedPhotos.push({
                                 filename:    json.file,
-                                lat:         exifData.lat ?? json.lat ?? null,
-                                lon:         exifData.lon ?? json.lon ?? null,
+                                lat:         json.lat ?? null,
+                                lon:         json.lon ?? null,
                                 location:    json.location || '',
                                 timestamp:   ts,
                                 date_str:    d ? `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}` : '',
@@ -579,12 +626,18 @@ document.addEventListener("DOMContentLoaded", () => {
                         errorCount++;
                         if (res.status === 403) {
                             alert("Falsches Passwort.");
-                            state.adminUpload.tempPassword = null; // Sofort vergessen
+                            state.adminUpload.tempPassword = null;
                             break;
+                        }
+                        if (json.missing_gps) {
+                            alert(`⚠️ ${files[i].name}\nKeine GPS-Daten gefunden. Bitte GPS in der Kamera aktivieren.`);
+                        } else {
+                            alert(`Upload Fehler (${res.status}): ${json.error || 'Unbekannter Fehler'}`);
                         }
                     }
                 } catch (error) {
                     console.error("Upload Fehler:", error);
+                    alert(`Netzwerkfehler beim Upload: ${error.message}`);
                     errorCount++;
                 }
 
@@ -677,6 +730,24 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             const pos = state.fixMarker.getLatLng();
+
+            // Pre-upload mode: resolve the pickLocation() promise
+            if (state.locationSelectResolve) {
+                const resolve = state.locationSelectResolve;
+                state.locationSelectResolve = null;
+
+                if (state.fixMarker) {
+                    state.mapInstance.removeLayer(state.fixMarker);
+                    state.fixMarker = null;
+                }
+                if (dom.fixInterface) dom.fixInterface.style.display = 'none';
+                if (dom.infoStandard) dom.infoStandard.style.display = 'block';
+
+                resolve({ lat: pos.lat, lon: pos.lng });
+                return;
+            }
+
+            // Post-upload fix mode: save location via API
             const filename = state.missingGpsQueue[0];
             const password = state.adminUpload.tempPassword;
 
@@ -708,40 +779,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // 9. HELFER & MODAL EVENTS
     // -------------------------------------------------------------------------
 
-    function dmsToDecimal(dms, ref) {
-        const decimal = dms[0] + dms[1] / 60 + dms[2] / 3600;
-        return (ref === 'S' || ref === 'W') ? -decimal : decimal;
-    }
-
-    function parseExifDate(str) {
-        const [datePart, timePart] = str.split(' ');
-        const [year, month, day] = datePart.split(':').map(Number);
-        const [hour, min, sec] = timePart.split(':').map(Number);
-        return Math.floor(new Date(year, month - 1, day, hour, min, sec).getTime() / 1000);
-    }
-
-    function readExifFromFile(file) {
-        return new Promise((resolve) => {
-            EXIF.getData(file, function () {
-                const latDms  = EXIF.getTag(this, 'GPSLatitude');
-                const latRef  = EXIF.getTag(this, 'GPSLatitudeRef');
-                const lonDms  = EXIF.getTag(this, 'GPSLongitude');
-                const lonRef  = EXIF.getTag(this, 'GPSLongitudeRef');
-                const dateStr = EXIF.getTag(this, 'DateTimeOriginal');
-                const result  = {};
-                if (latDms && lonDms && latRef && lonRef) {
-                    result.lat = dmsToDecimal(latDms, latRef);
-                    result.lon = dmsToDecimal(lonDms, lonRef);
-                }
-                if (dateStr) {
-                    result.timestamp = parseExifDate(dateStr);
-                }
-                resolve(result);
-            });
-        });
-    }
-
-    function setText(id, text) {
+function setText(id, text) {
         const el = document.getElementById(id);
         if(el) el.innerText = text;
     }

@@ -78,7 +78,9 @@ class TestUploadPhoto:
     def test_valid_upload_returns_success(self, client):
         response = client.post('/api/upload', data={
             'admin_token': 'test_admin',
-            'photo': (self._make_jpeg_bytes(), 'test.jpg')
+            'photo': (self._make_jpeg_bytes(), 'test.jpg'),
+            'lat': '48.8566',
+            'lon': '2.3522',
         }, content_type='multipart/form-data')
         assert response.status_code == 200
         data = response.get_json()
@@ -88,7 +90,9 @@ class TestUploadPhoto:
     def test_upload_response_contains_location_field(self, client):
         response = client.post('/api/upload', data={
             'admin_token': 'test_admin',
-            'photo': (self._make_jpeg_bytes(), 'test.jpg')
+            'photo': (self._make_jpeg_bytes(), 'test.jpg'),
+            'lat': '48.8566',
+            'lon': '2.3522',
         }, content_type='multipart/form-data')
         assert response.status_code == 200
         assert 'location' in response.get_json()
@@ -110,60 +114,6 @@ class TestUploadWithFormCoords:
         Image.new('RGB', (100, 100)).save(buf, format='JPEG')
         buf.seek(0)
         return buf
-
-    def test_piexif_insert_called_when_coords_provided(self, client):
-        with patch('piexif.load') as mock_load, \
-             patch('piexif.dump', return_value=b'exif'), \
-             patch('piexif.insert') as mock_insert:
-            mock_load.return_value = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
-
-            client.post('/api/upload', data={
-                'admin_token': 'test_admin',
-                'photo': (self._make_jpeg_bytes(), 'coords.jpg'),
-                'lat': '48.8566',
-                'lon': '2.3522',
-                'timestamp': '1689418800',
-            }, content_type='multipart/form-data')
-
-            mock_insert.assert_called_once()
-
-    def test_upload_with_coords_returns_success(self, client):
-        with patch('piexif.load') as mock_load, \
-             patch('piexif.dump', return_value=b'exif'), \
-             patch('piexif.insert'):
-            mock_load.return_value = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
-
-            response = client.post('/api/upload', data={
-                'admin_token': 'test_admin',
-                'photo': (self._make_jpeg_bytes(), 'coords.jpg'),
-                'lat': '48.8566',
-                'lon': '2.3522',
-            }, content_type='multipart/form-data')
-
-            assert response.status_code == 200
-            data = response.get_json()
-            assert data['success'] is True
-            assert data['missing_gps'] is False
-            assert 'location' in data
-
-    def test_upload_with_coords_location_is_not_unbekannt(self, client):
-        with patch('piexif.load') as mock_load, \
-             patch('piexif.dump', return_value=b'exif'), \
-             patch('piexif.insert'), \
-             patch('app.get_location_name', return_value='Unbekannt'):
-            mock_load.return_value = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
-
-            response = client.post('/api/upload', data={
-                'admin_token': 'test_admin',
-                'photo': (self._make_jpeg_bytes(), 'coords.jpg'),
-                'lat': '48.8566',
-                'lon': '2.3522',
-            }, content_type='multipart/form-data')
-
-            data = response.get_json()
-            assert data['location'] != 'Unbekannt'
-            assert '48.86' in data['location']
-            assert '2.35' in data['location']
 
     def test_piexif_insert_not_called_without_coords(self, client):
         with patch('piexif.insert') as mock_insert:
@@ -210,6 +160,8 @@ class TestUploadIdempotency:
         response = client.post('/api/upload', data={
             'admin_token': 'test_admin',
             'photo': (self._make_jpeg_bytes(), 'duplicate.jpg'),
+            'lat': '48.0',
+            'lon': '11.0',
         }, content_type='multipart/form-data')
 
         assert response.status_code == 200
@@ -240,22 +192,37 @@ class TestUploadResponseFields:
         buf.seek(0)
         return buf
 
-    def test_upload_response_contains_lat_lon(self, client):
-        with patch('piexif.load') as mock_load, \
-             patch('piexif.dump', return_value=b'exif'), \
-             patch('piexif.insert'):
-            mock_load.return_value = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
+    def test_upload_response_contains_lat_lon(self, client, tmp_path):
+        import piexif
+        from PIL import Image
+        from app import decimal_to_dms_rational
 
-            response = client.post('/api/upload', data={
-                'admin_token': 'test_admin',
-                'photo': (self._make_jpeg_bytes(), 'with_coords.jpg'),
-                'lat': '48.8566',
-                'lon': '2.3522',
-            }, content_type='multipart/form-data')
+        buf = io.BytesIO()
+        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
+        buf.seek(0)
+        img_bytes = buf.getvalue()
+
+        exif_dict = {'0th': {}, 'Exif': {}, 'GPS': {
+            piexif.GPSIFD.GPSLatitudeRef:  b'N',
+            piexif.GPSIFD.GPSLatitude:     decimal_to_dms_rational(48.8566),
+            piexif.GPSIFD.GPSLongitudeRef: b'E',
+            piexif.GPSIFD.GPSLongitude:    decimal_to_dms_rational(2.3522),
+        }, '1st': {}}
+        exif_bytes = piexif.dump(exif_dict)
+        jpeg_with_gps = io.BytesIO()
+        img = Image.open(io.BytesIO(img_bytes))
+        img.save(jpeg_with_gps, format='JPEG', exif=exif_bytes)
+        jpeg_with_gps.seek(0)
+
+        response = client.post('/api/upload', data={
+            'admin_token': 'test_admin',
+            'photo': (jpeg_with_gps, 'with_gps.jpg'),
+        }, content_type='multipart/form-data')
 
         data = response.get_json()
         assert 'lat' in data
         assert 'lon' in data
+        assert data['lat'] is not None
         assert abs(data['lat'] - 48.8566) < 0.01
         assert abs(data['lon'] - 2.3522) < 0.01
 
@@ -265,6 +232,8 @@ class TestUploadResponseFields:
         response = client.post('/api/upload', data={
             'admin_token': 'test_admin',
             'photo': (self._make_jpeg_bytes(), 'mytrip.jpg'),
+            'lat': '48.8566',
+            'lon': '2.3522',
         }, content_type='multipart/form-data')
         assert response.status_code == 200
         uploaded_file = response.get_json()['file']
@@ -276,17 +245,15 @@ class TestUploadResponseFields:
         assert os.path.exists(expected_thumb), "Thumbnail fehlt unter erwartetem Pfad"
         assert not os.path.exists(double_ext_thumb), "Thumbnail doppelt mit .jpg.jpg angelegt"
 
-    def test_upload_without_gps_returns_null_lat_lon(self, client):
+    def test_upload_without_gps_returns_400(self, client):
         response = client.post('/api/upload', data={
             'admin_token': 'test_admin',
             'photo': (self._make_jpeg_bytes(), 'no_gps.jpg'),
         }, content_type='multipart/form-data')
 
+        assert response.status_code == 400
         data = response.get_json()
-        assert 'lat' in data
-        assert 'lon' in data
-        assert data['lat'] is None
-        assert data['lon'] is None
+        assert data.get('missing_gps') is True
 
 
 class TestDeletePhoto:

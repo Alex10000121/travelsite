@@ -72,29 +72,43 @@ def extract_exif_data(image_path):
     timestamp = None
     coords = None
 
+    # Versuch 1: PIL
     try:
         with Image.open(image_path) as img:
             exif = img.getexif()
-            if not exif:
-                return None, None
+            if exif:
+                date_str = exif.get(36867)
+                if date_str:
+                    try:
+                        dt = datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
+                        timestamp = dt.timestamp()
+                    except ValueError:
+                        pass
 
-            date_str = exif.get(36867)
-            if date_str:
-                try:
-                    dt = datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
-                    timestamp = dt.timestamp()
-                except ValueError:
-                    pass
-
-            gps_info = {GPSTAGS.get(t, t): v for t, v in exif.get_ifd(0x8825).items()}
-
-            if 'GPSLatitude' in gps_info and 'GPSLongitude' in gps_info:
-                lat = get_decimal_from_dms(gps_info['GPSLatitude'], gps_info['GPSLatitudeRef'])
-                lon = get_decimal_from_dms(gps_info['GPSLongitude'], gps_info['GPSLongitudeRef'])
-                coords = (lat, lon)
-
+                gps_info = {GPSTAGS.get(t, t): v for t, v in exif.get_ifd(0x8825).items()}
+                if 'GPSLatitude' in gps_info and 'GPSLongitude' in gps_info:
+                    lat = get_decimal_from_dms(gps_info['GPSLatitude'], gps_info['GPSLatitudeRef'])
+                    lon = get_decimal_from_dms(gps_info['GPSLongitude'], gps_info['GPSLongitudeRef'])
+                    if math.isfinite(lat) and math.isfinite(lon):
+                        coords = (lat, lon)
     except Exception as e:
-        logger.warning(f"EXIF read error: {image_path}: {e}")
+        logger.warning(f"PIL EXIF read error: {image_path}: {e}")
+
+    # Versuch 2: piexif als Fallback
+    if not coords:
+        try:
+            exif_dict = piexif.load(image_path)
+            gps = exif_dict.get('GPS', {})
+            if piexif.GPSIFD.GPSLatitude in gps and piexif.GPSIFD.GPSLongitude in gps:
+                def _r(v): return v[0][0] / v[0][1] + v[1][0] / (v[1][1] * 60) + v[2][0] / (v[2][1] * 3600)
+                lat = _r(gps[piexif.GPSIFD.GPSLatitude])
+                lon = _r(gps[piexif.GPSIFD.GPSLongitude])
+                if gps.get(piexif.GPSIFD.GPSLatitudeRef, b'N') in (b'S', 'S'): lat = -lat
+                if gps.get(piexif.GPSIFD.GPSLongitudeRef, b'E') in (b'W', 'W'): lon = -lon
+                if math.isfinite(lat) and math.isfinite(lon):
+                    coords = (lat, lon)
+        except Exception as e:
+            logger.warning(f"piexif GPS read error: {image_path}: {e}")
 
     return timestamp, coords
 
@@ -187,7 +201,8 @@ def track_visitor_count():
 # --- WORKER ---
 
 def index_photo(full_path, abs_photo_dir):
-    if '@eaDir' in full_path or os.sep + 'no_gps' + os.sep in full_path or full_path.endswith(os.sep + 'no_gps'):
+    norm = full_path.replace('\\', '/')
+    if '@eaDir' in norm or '/no_gps/' in norm or norm.endswith('/no_gps'):
         return
     if not full_path.lower().endswith(SUPPORTED_EXTENSIONS):
         return
@@ -305,7 +320,7 @@ def api_route():
     photos = []
     try:
         with get_db() as conn:
-            rows = conn.execute("SELECT * FROM photos ORDER BY timestamp ASC").fetchall()
+            rows = conn.execute("SELECT * FROM photos WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY timestamp ASC").fetchall()
 
         for r in rows:
             p = dict(r)
@@ -378,6 +393,18 @@ def upload_photo():
     file = request.files['photo']
     if file.filename == '': return jsonify({'error': 'Empty filename'}), 400
 
+    # Parse form-supplied coordinates (sent by client when EXIF GPS is missing)
+    form_coords = None
+    try:
+        form_lat = request.form.get('lat')
+        form_lon = request.form.get('lon')
+        if form_lat and form_lon:
+            flat, flon = float(form_lat), float(form_lon)
+            if math.isfinite(flat) and math.isfinite(flon):
+                form_coords = (flat, flon)
+    except (ValueError, TypeError):
+        pass
+
     try:
         filename = secure_filename(file.filename)
         unique_name = f"{int(time.time())}_{filename}"
@@ -385,54 +412,43 @@ def upload_photo():
 
         file.save(save_path)
 
-        form_lat = request.form.get('lat')
-        form_lon = request.form.get('lon')
-        form_ts  = request.form.get('timestamp')
+        ts, coords = extract_exif_data(save_path)
 
-        try:
-            if form_lat and form_lon:
-                lat_val = float(form_lat)
-                lon_val = float(form_lon)
+        flat_thumb_name = unique_name if unique_name.lower().endswith('.jpg') else unique_name + '.jpg'
+        thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_thumb_name)
+
+        # If no EXIF GPS but client supplied coordinates, write them into the file
+        if not coords and form_coords:
+            flat, flon = form_coords
+            try:
                 try:
                     exif_dict = piexif.load(save_path)
                 except Exception:
                     exif_dict = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
                 exif_dict['GPS'] = {
-                    piexif.GPSIFD.GPSLatitudeRef:  b'N' if lat_val >= 0 else b'S',
-                    piexif.GPSIFD.GPSLatitude:     decimal_to_dms_rational(lat_val),
-                    piexif.GPSIFD.GPSLongitudeRef: b'E' if lon_val >= 0 else b'W',
-                    piexif.GPSIFD.GPSLongitude:    decimal_to_dms_rational(lon_val),
+                    piexif.GPSIFD.GPSLatitudeRef: b'N' if flat >= 0 else b'S',
+                    piexif.GPSIFD.GPSLatitude: decimal_to_dms_rational(abs(flat)),
+                    piexif.GPSIFD.GPSLongitudeRef: b'E' if flon >= 0 else b'W',
+                    piexif.GPSIFD.GPSLongitude: decimal_to_dms_rational(abs(flon)),
                 }
-                if form_ts:
-                    dt_str = datetime.fromtimestamp(float(form_ts)).strftime('%Y:%m:%d %H:%M:%S').encode()
-                    exif_dict['Exif'][piexif.ExifIFD.DateTimeOriginal] = dt_str
-                piexif.insert(piexif.dump(exif_dict), save_path)
-        except Exception:
-            pass
+                exif_bytes = piexif.dump(exif_dict)
+                piexif.insert(exif_bytes, save_path)
+            except Exception as e:
+                logger.warning(f"Failed to write form coords to EXIF: {e}")
+            coords = form_coords
 
-        ts, coords = extract_exif_data(save_path)
+        if not coords or math.isnan(coords[0]) or math.isnan(coords[1]):
+            # Kein GPS – Datei löschen
+            os.remove(save_path)
+            return jsonify({'success': False, 'missing_gps': True,
+                            'error': 'Foto hat keine GPS-Daten. Bitte GPS in der Kamera-App aktivieren.'}), 400
 
-        lat, lon = None, None
-        loc = "Kein Standort"
-        missing_gps = True
-
-        if coords and not math.isnan(coords[0]) and not math.isnan(coords[1]):
-            lat, lon = coords
-            loc = get_location_name(lat, lon)
-            missing_gps = False
-        elif form_lat and form_lon:
-            lat = float(form_lat)
-            lon = float(form_lon)
-            loc = get_location_name(lat, lon)
-            missing_gps = False
-
-        if loc == "Unbekannt" and lat is not None:
+        lat, lon = coords
+        loc = get_location_name(lat, lon)
+        if loc == "Unbekannt":
             loc = f"{lat:.2f}, {lon:.2f}"
 
-        flat_thumb_name = unique_name if unique_name.lower().endswith('.jpg') else unique_name + '.jpg'
-        thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_thumb_name)
         generate_thumbnail(save_path, thumb_path)
-
         final_ts = ts or time.time()
 
         with get_db() as conn:
@@ -441,7 +457,8 @@ def upload_photo():
                 (unique_name, lat, lon, final_ts, loc)
             )
 
-        return jsonify({'success': True, 'file': unique_name, 'location': loc, 'missing_gps': missing_gps, 'lat': lat, 'lon': lon})
+        return jsonify({'success': True, 'file': unique_name, 'location': loc,
+                        'missing_gps': False, 'lat': lat, 'lon': lon, 'timestamp': final_ts})
 
     except Exception as e:
         if 'save_path' in locals() and os.path.exists(save_path): os.remove(save_path)
@@ -464,11 +481,15 @@ def update_location():
 
     try:
         new_loc = get_location_name(lat, lon)
+        if new_loc == "Unbekannt":
+            new_loc = f"{lat:.2f}, {lon:.2f}"
+
         with get_db() as conn:
             conn.execute("UPDATE photos SET lat = ?, lon = ?, location = ? WHERE filename = ?",
                          (lat, lon, new_loc, filename))
 
         logger.info(f"Location update for {filename}: {new_loc}")
+
         return jsonify({'success': True, 'location': new_loc})
 
     except Exception as e:
