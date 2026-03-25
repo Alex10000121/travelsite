@@ -103,28 +103,28 @@ class TestExtractExifData:
         assert abs(coords[0] - 48.8566) < 0.01
         assert abs(coords[1] - 2.3522) < 0.01
 
-    def test_extracts_timestamp(self):
+    def test_extracts_timestamp_from_exif_ifd(self, tmp_path):
         from datetime import datetime
-        from unittest.mock import patch, MagicMock
-
-        mock_exif = MagicMock()
-        mock_exif.__bool__ = MagicMock(return_value=True)
-        mock_exif.get = MagicMock(side_effect=lambda tag, *a: '2023:07:15 12:00:00' if tag == 36867 else None)
-        mock_exif.get_ifd = MagicMock(return_value={})
-
-        mock_img = MagicMock()
-        mock_img.getexif.return_value = mock_exif
-        mock_img.__enter__ = MagicMock(return_value=mock_img)
-        mock_img.__exit__ = MagicMock(return_value=False)
-
-        with patch('app.Image.open', return_value=mock_img):
-            ts, _ = extract_exif_data('/fake/path.jpg')
-
+        img_path = _make_jpeg_with_gps(tmp_path / 'ts.jpg', 48.8566, 2.3522, date_str='2023:07:15 12:00:00')
+        ts, _ = extract_exif_data(img_path)
         assert ts is not None
         dt = datetime.fromtimestamp(ts)
         assert dt.year == 2023
         assert dt.month == 7
         assert dt.day == 15
+
+    def test_extracts_timestamp_and_gps_together(self, tmp_path):
+        from datetime import datetime
+        img_path = _make_jpeg_with_gps(tmp_path / 'full.jpg', 52.52, 13.405, date_str='2025:03:18 09:30:00')
+        ts, coords = extract_exif_data(img_path)
+        assert ts is not None
+        assert coords is not None
+        dt = datetime.fromtimestamp(ts)
+        assert dt.year == 2025
+        assert dt.month == 3
+        assert dt.day == 18
+        assert abs(coords[0] - 52.52) < 0.01
+        assert abs(coords[1] - 13.405) < 0.01
 
     def test_south_latitude_is_negative(self, tmp_path):
         img_path = _make_jpeg_with_gps(tmp_path / 'south.jpg', -33.8688, 151.2093)

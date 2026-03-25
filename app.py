@@ -77,7 +77,8 @@ def extract_exif_data(image_path):
         with Image.open(image_path) as img:
             exif = img.getexif()
             if exif:
-                date_str = exif.get(36867)
+                # DateTimeOriginal kann im Haupt-IFD oder im ExifIFD (0x8769) liegen
+                date_str = exif.get(36867) or exif.get_ifd(0x8769).get(36867)
                 if date_str:
                     try:
                         dt = datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
@@ -95,20 +96,33 @@ def extract_exif_data(image_path):
         logger.warning(f"PIL EXIF read error: {image_path}: {e}")
 
     # Versuch 2: piexif als Fallback
-    if not coords:
+    if not timestamp or not coords:
         try:
             exif_dict = piexif.load(image_path)
-            gps = exif_dict.get('GPS', {})
-            if piexif.GPSIFD.GPSLatitude in gps and piexif.GPSIFD.GPSLongitude in gps:
-                def _r(v): return v[0][0] / v[0][1] + v[1][0] / (v[1][1] * 60) + v[2][0] / (v[2][1] * 3600)
-                lat = _r(gps[piexif.GPSIFD.GPSLatitude])
-                lon = _r(gps[piexif.GPSIFD.GPSLongitude])
-                if gps.get(piexif.GPSIFD.GPSLatitudeRef, b'N') in (b'S', 'S'): lat = -lat
-                if gps.get(piexif.GPSIFD.GPSLongitudeRef, b'E') in (b'W', 'W'): lon = -lon
-                if math.isfinite(lat) and math.isfinite(lon):
-                    coords = (lat, lon)
+
+            if not timestamp:
+                exif_ifd = exif_dict.get('Exif', {})
+                date_bytes = exif_ifd.get(piexif.ExifIFD.DateTimeOriginal)
+                if date_bytes:
+                    try:
+                        date_str = date_bytes.decode('utf-8').strip('\x00')
+                        dt = datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
+                        timestamp = dt.timestamp()
+                    except (ValueError, UnicodeDecodeError):
+                        pass
+
+            if not coords:
+                gps = exif_dict.get('GPS', {})
+                if piexif.GPSIFD.GPSLatitude in gps and piexif.GPSIFD.GPSLongitude in gps:
+                    def _r(v): return v[0][0] / v[0][1] + v[1][0] / (v[1][1] * 60) + v[2][0] / (v[2][1] * 3600)
+                    lat = _r(gps[piexif.GPSIFD.GPSLatitude])
+                    lon = _r(gps[piexif.GPSIFD.GPSLongitude])
+                    if gps.get(piexif.GPSIFD.GPSLatitudeRef, b'N') in (b'S', 'S'): lat = -lat
+                    if gps.get(piexif.GPSIFD.GPSLongitudeRef, b'E') in (b'W', 'W'): lon = -lon
+                    if math.isfinite(lat) and math.isfinite(lon):
+                        coords = (lat, lon)
         except Exception as e:
-            logger.warning(f"piexif GPS read error: {image_path}: {e}")
+            logger.warning(f"piexif read error: {image_path}: {e}")
 
     return timestamp, coords
 
