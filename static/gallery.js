@@ -1,22 +1,5 @@
-/**
- * =============================================================================
- * GALLERY MODULE — Foto-Anzeige, Navigation, Gesten und Tastatur
- * =============================================================================
- *
- * Keine Abhängigkeit zu Leaflet, API oder globalem State.
- *
- * Verwendung:
- *   const gallery = new GalleryController({
- *       currentPhoto: document.getElementById('current-photo'),
- *       bgPhoto:      document.getElementById('bg-photo'),
- *       txtLocation:  document.getElementById('photo-location'),
- *       txtDate:      document.getElementById('photo-date'),
- *       galleryPanel: document.querySelector('.gallery-panel'),
- *   }, token);
- *
- *   gallery.onPhotoChange = (index, photo) => map.setActiveMarker(index, photo);
- *   gallery.loadPhotos(photos);
- */
+// Foto-Anzeige, Navigation, Swipe-Gesten und Tastatur-Events.
+// Keine Abhängigkeit zu Leaflet oder API.
 
 export class GalleryController {
 
@@ -52,7 +35,7 @@ export class GalleryController {
 
     /**
      * Wird nach jeder Navigationsaktion aufgerufen.
-     * Erlaubt dem Aufrufer (script.js / main.js), die Karte zu synchronisieren.
+     * Erlaubt dem Aufrufer (main.js), die Karte zu synchronisieren.
      * @param {function(index: number, photo: object): void} fn
      */
     set onPhotoChange(fn) { this._onPhotoChange = fn; }

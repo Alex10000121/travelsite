@@ -1,20 +1,5 @@
-/**
- * =============================================================================
- * ADMIN MODULE — Login, Upload, GPS-Fix-Assistent, Datenbereinigung
- * =============================================================================
- *
- * Abhängigkeiten:
- *   - api.js  (checkLogin, uploadPhoto, deletePhoto, updateLocation)
- *   - map.js  (MapController-Instanz für Fix-Marker-Steuerung)
- *
- * Keine Abhängigkeit zu gallery.js oder globalem State.
- *
- * Verwendung:
- *   const admin = new AdminController({ ...domRefs }, map);
- *   admin.onUploadComplete = (uploadedPhotos) => { ... };
- *   admin.onFixingModeChange = (active) => gallery.setFixingMode(active);
- *   admin.setAllPhotos(photos);   // nach fetchRoute
- */
+// Admin-Logik: Login, Upload, GPS-Fix-Assistent, Datenbereinigung.
+// Keine Abhängigkeit zu gallery.js — Kommunikation nur über Callbacks.
 
 import { checkLogin, uploadPhoto, deletePhoto, updateLocation } from './api.js';
 
@@ -137,7 +122,7 @@ export class AdminController {
             loginModal.classList.add('show');
             setTimeout(() => passwordInput?.focus(), 100);
         } else {
-            // Fallback für ältere Browser ohne Modal-Support
+            // Fallback wenn kein Login-Modal im DOM vorhanden
             const pw = prompt('Admin Passwort:');
             if (pw) this._handleLoginSuccess(pw);
         }

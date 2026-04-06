@@ -1,12 +1,5 @@
-/**
- * =============================================================================
- * API MODULE — Alle fetch-Aufrufe zum Backend
- * =============================================================================
- *
- * Jede Funktion gibt entweder die geparsten Daten zurück oder wirft einen
- * Error mit einer sprechenden Meldung. Der Aufrufer entscheidet, was dann
- * passiert (try/catch im aufrufenden Code).
- */
+// Alle fetch-Aufrufe zum Backend.
+// Jede Funktion wirft bei Fehler einen Error — kein fetch() außerhalb dieser Datei.
 
 /**
  * Lädt alle Routendaten (Fotos + Statistiken) vom Server.

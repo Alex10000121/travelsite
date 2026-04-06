@@ -1,16 +1,4 @@
-/**
- * =============================================================================
- * MAIN — Einstiegspunkt, Orchestrierung aller Module
- * =============================================================================
- *
- * Reihenfolge:
- *   1. Token lesen & Guards
- *   2. DOM-Referenzen sammeln
- *   3. Module instanziieren (Map, Gallery, Admin)
- *   4. Callbacks verknüpfen
- *   5. Daten laden
- *   6. Hilfs-Events (Modals, Tutorial)
- */
+// Einstiegspunkt: instanziiert alle Module und verdrahtet ihre Callbacks.
 
 import { fetchRoute }      from './api.js';
 import { MapController }   from './map.js';

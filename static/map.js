@@ -1,16 +1,5 @@
-/**
- * =============================================================================
- * MAP MODULE — Kapselt die gesamte Leaflet-Logik
- * =============================================================================
- *
- * Abhängigkeiten: Leaflet (global `L`) und Leaflet.markercluster (global Plugin)
- * Keine Abhängigkeit zu DOM (außer dem übergebenen map-Element), State oder API.
- *
- * Verwendung:
- *   const map = new MapController(document.getElementById('map'));
- *   map.renderPhotos(photos, (index) => console.log('Klick auf Index', index));
- *   map.setActiveMarker(3);
- */
+// Kapselt die gesamte Leaflet-Logik (benötigt globales `L` und markercluster-Plugin).
+// Keine Abhängigkeit zu API oder globalem State.
 
 const STYLES = {
     active: {
