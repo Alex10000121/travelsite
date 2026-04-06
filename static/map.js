@@ -30,6 +30,7 @@ export class MapController {
 
     constructor(mapElement, options = {}) {
         this._photos        = [];
+        this._routes        = [];
         this._activeIndex   = -1;
         this._fixMarker     = null;
         this._mapReady      = false;
@@ -174,7 +175,7 @@ export class MapController {
         if (!this._map.getSource('route')) {
             this._map.addSource('route', {
                 type: 'geojson',
-                data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } }
+                data: { type: 'FeatureCollection', features: [] }
             });
         }
     }
@@ -186,10 +187,9 @@ export class MapController {
                 type: 'line',
                 source: 'route',
                 paint: {
-                    'line-color': '#ef4444',
-                    'line-width': 3,
-                    'line-opacity': 0.85,
-                    'line-dasharray': [2, 4]
+                    'line-color': '#f97316',
+                    'line-width': 4,
+                    'line-opacity': 0.95
                 }
             });
         }
@@ -200,7 +200,7 @@ export class MapController {
                 source: 'photos',
                 filter: ['has', 'point_count'],
                 paint: {
-                    'circle-color': '#ef4444',
+                    'circle-color': '#f97316',
                     'circle-radius': ['step', ['get', 'point_count'], 15, 10, 20, 50, 25],
                     'circle-opacity': 0.85,
                     'circle-stroke-width': 2,
@@ -229,7 +229,7 @@ export class MapController {
                 source: 'photos',
                 filter: ['!', ['has', 'point_count']],
                 paint: {
-                    'circle-color': ['case', ['==', ['get', 'active'], true], '#ef4444', '#64748b'],
+                    'circle-color': '#f97316',
                     'circle-radius': ['case', ['==', ['get', 'active'], true], 10, 6],
                     'circle-opacity': ['case', ['==', ['get', 'active'], true], 1, 0.6],
                     'circle-stroke-width': ['case', ['==', ['get', 'active'], true], 4, 1],
@@ -246,13 +246,14 @@ export class MapController {
             this._onMarkerClick?.(e.features[0].properties.index);
         });
 
-        this._map.on('click', 'clusters', (e) => {
+        this._map.on('click', 'clusters', async (e) => {
             this._clickConsumed = true;
-            const clusterId = e.features[0].properties.cluster_id;
-            this._map.getSource('photos').getClusterExpansionZoom(clusterId, (err, zoom) => {
-                if (err) return;
-                this._map.flyTo({ center: e.features[0].geometry.coordinates, zoom });
-            });
+            const clusterId = Number(e.features[0].properties.cluster_id);
+            const center = e.features[0].geometry.coordinates.slice();
+            try {
+                const zoom = await this._map.getSource('photos').getClusterExpansionZoom(clusterId);
+                this._map.easeTo({ center, zoom });
+            } catch (_) {}
         });
 
         this._map.on('mouseenter', 'unclustered-point', () => { this._map.getCanvas().style.cursor = 'pointer'; });
@@ -276,15 +277,28 @@ export class MapController {
     }
 
     _buildRouteGeoJSON() {
-        return {
-            type: 'Feature',
-            geometry: {
-                type: 'LineString',
-                coordinates: this._photos
-                    .filter(p => p.lat != null && p.lon != null)
-                    .map(p => [p.lon, p.lat])
+        const features = [];
+
+        if (this._routes.length > 0) {
+            for (const geometry of this._routes) {
+                if (geometry) {
+                    features.push({ type: 'Feature', geometry, properties: {} });
+                }
             }
-        };
+        } else {
+            const coords = this._photos
+                .filter(p => p.lat != null && p.lon != null)
+                .map(p => [p.lon, p.lat]);
+            if (coords.length > 1) {
+                features.push({
+                    type: 'Feature',
+                    geometry: { type: 'LineString', coordinates: coords },
+                    properties: {}
+                });
+            }
+        }
+
+        return { type: 'FeatureCollection', features };
     }
 
     _updateSources() {
@@ -327,8 +341,9 @@ export class MapController {
     set onMarkerClick(fn) { this._onMarkerClick = fn; }
     set onMapClick(fn)    { this._onMapClick    = fn; }
 
-    renderPhotos(photos) {
+    renderPhotos(photos, routes) {
         this._photos = photos;
+        if (routes !== undefined) this._routes = routes;
         if (this._mapReady) this._updateSources();
     }
 

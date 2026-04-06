@@ -5,11 +5,15 @@ import time
 import math
 import hashlib
 import logging
+import json
+from contextlib import contextmanager
 from datetime import datetime
+
+import requests
 
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from PIL import Image, ImageOps
-from PIL.ExifTags import TAGS, GPSTAGS
+from PIL.ExifTags import GPSTAGS
 import reverse_geocoder as rg
 from werkzeug.utils import secure_filename
 from watchdog.observers import Observer
@@ -139,6 +143,58 @@ def get_location_name(lat, lon):
     return "Unbekannt"
 
 
+OSRM_MAX_KM = 500
+
+
+def fetch_osrm_route(lat1, lon1, lat2, lon2):
+    if calculate_distance(lat1, lon1, lat2, lon2) > OSRM_MAX_KM:
+        return None
+    url = (
+        f"https://router.project-osrm.org/route/v1/driving/"
+        f"{lon1},{lat1};{lon2},{lat2}"
+        f"?overview=full&geometries=geojson"
+    )
+    try:
+        resp = requests.get(url, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get('code') == 'Ok' and data.get('routes'):
+            return data['routes'][0]['geometry']
+    except Exception as e:
+        logger.warning(f"OSRM API error ({lat1},{lon1} -> {lat2},{lon2}): {e}")
+    return None
+
+
+def straight_line_geometry(lat1, lon1, lat2, lon2):
+    return {"type": "LineString", "coordinates": [[lon1, lat1], [lon2, lat2]]}
+
+
+def fetch_missing_routes(missing_pairs):
+    for start_fn, end_fn, lat1, lon1, lat2, lon2 in missing_pairs:
+        try:
+            with get_db() as conn:
+                if conn.execute(
+                    "SELECT 1 FROM routes WHERE start_filename=? AND end_filename=?",
+                    (start_fn, end_fn)
+                ).fetchone():
+                    continue
+
+            geometry = fetch_osrm_route(lat1, lon1, lat2, lon2)
+            if geometry is None:
+                geometry = straight_line_geometry(lat1, lon1, lat2, lon2)
+
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT OR IGNORE INTO routes (start_filename, end_filename, geometry) VALUES (?, ?, ?)",
+                    (start_fn, end_fn, json.dumps(geometry))
+                )
+
+            if calculate_distance(lat1, lon1, lat2, lon2) <= OSRM_MAX_KM:
+                time.sleep(1)
+        except Exception as e:
+            logger.warning(f"Route background fetch error {start_fn} -> {end_fn}: {e}")
+
+
 def generate_thumbnail(original_path, thumb_path):
     if os.path.exists(thumb_path):
         return True
@@ -160,11 +216,19 @@ def generate_thumbnail(original_path, thumb_path):
 
 # --- DB ---
 
+@contextmanager
 def get_db():
     conn = sqlite3.connect(CONFIG['DB_PATH'], timeout=20)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def init_db():
@@ -182,6 +246,15 @@ def init_db():
             conn.execute('CREATE TABLE IF NOT EXISTS global_stats (key TEXT PRIMARY KEY, value INTEGER)')
             conn.execute("INSERT OR IGNORE INTO global_stats (key, value) VALUES ('visitor_count', 0)")
             conn.execute('CREATE TABLE IF NOT EXISTS active_sessions (hash TEXT PRIMARY KEY, timestamp REAL)')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS routes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    start_filename TEXT NOT NULL,
+                    end_filename TEXT NOT NULL,
+                    geometry TEXT NOT NULL,
+                    UNIQUE(start_filename, end_filename)
+                )
+            ''')
         logger.info("Database initialized.")
     except Exception as e:
         logger.critical(f"Database init failed: {e}")
@@ -202,8 +275,6 @@ def track_visitor_count():
                 conn.execute("UPDATE global_stats SET value = value + 1 WHERE key = 'visitor_count'")
             else:
                 conn.execute("UPDATE active_sessions SET timestamp = ? WHERE hash = ?", (now, visitor_hash))
-
-            conn.commit()
 
             row = conn.execute("SELECT value FROM global_stats WHERE key = 'visitor_count'").fetchone()
             if row: total = row['value']
@@ -256,7 +327,6 @@ def index_photo(full_path, abs_photo_dir):
                 "INSERT OR IGNORE INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
                 (rel_path, lat, lon, final_ts, loc)
             )
-            conn.commit()
             if cursor.rowcount:
                 logger.info(f"Indexed: {rel_path} (GPS: {lat}, {lon})")
     except Exception as e:
@@ -336,7 +406,10 @@ def api_route():
     photos = []
     try:
         with get_db() as conn:
-            rows = conn.execute("SELECT * FROM photos WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY timestamp ASC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM photos WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY timestamp ASC"
+            ).fetchall()
+            route_rows = conn.execute("SELECT start_filename, end_filename, geometry FROM routes").fetchall()
 
         for r in rows:
             p = dict(r)
@@ -346,28 +419,47 @@ def api_route():
         logger.error(f"API Route error: {e}")
         return jsonify({"error": "DB Error"}), 500
 
+    route_cache = {
+        (r['start_filename'], r['end_filename']): json.loads(r['geometry'])
+        for r in route_rows
+    }
+
     total_km = 0
     unique_countries = set()
     days = 0
+    routes = []
+    missing_pairs = []
 
     if photos:
-        for i in range(len(photos)):
-            loc = photos[i]['location']
+        for i, photo in enumerate(photos):
+            loc = photo['location']
             if loc and ',' in loc:
                 unique_countries.add(loc.split(',')[-1].strip())
 
             if i > 0:
-                p1, p2 = photos[i - 1], photos[i]
+                p1 = photos[i - 1]
                 lat1, lon1 = p1.get('lat'), p1.get('lon')
-                lat2, lon2 = p2.get('lat'), p2.get('lon')
+                lat2, lon2 = photo.get('lat'), photo.get('lon')
 
-                if (lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None):
-                    if lat1 != 0 and lat2 != 0:
-                        total_km += calculate_distance(lat1, lon1, lat2, lon2)
+                if (lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None
+                        and lat1 != 0 and lat2 != 0):
+                    total_km += calculate_distance(lat1, lon1, lat2, lon2)
+                    key = (p1['filename'], photo['filename'])
+                    cached = route_cache.get(key)
+                    if cached:
+                        routes.append(cached)
+                    else:
+                        routes.append(straight_line_geometry(lat1, lon1, lat2, lon2))
+                        missing_pairs.append((p1['filename'], photo['filename'], lat1, lon1, lat2, lon2))
+                else:
+                    routes.append(None)
 
         ts_first = photos[0]['timestamp']
         ts_last = photos[-1]['timestamp']
         days = int((ts_last - ts_first) / 86400) + 1 if ts_first is not None and ts_last is not None else 0
+
+    if missing_pairs:
+        threading.Thread(target=fetch_missing_routes, args=(missing_pairs,), daemon=True).start()
 
     return jsonify({
         "stats": {
@@ -376,7 +468,8 @@ def api_route():
             "photo_count": len(photos),
             "days": days
         },
-        "photos": photos
+        "photos": photos,
+        "routes": routes
     })
 
 
@@ -523,22 +616,17 @@ def delete_photo():
     if not filename: return jsonify({'error': 'Kein Dateiname'}), 400
 
     try:
-
         base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
         file_path = os.path.abspath(os.path.join(base_dir, filename))
 
-
         if not os.path.commonpath([base_dir, file_path]) == base_dir: abort(403)
-
 
         flat_name = filename.replace('/', '_').replace('\\', '_')
         if not flat_name.lower().endswith('.jpg'): flat_name += '.jpg'
         thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
 
-
         if os.path.exists(file_path): os.remove(file_path)
         if os.path.exists(thumb_path): os.remove(thumb_path)
-
 
         with get_db() as conn:
             conn.execute("DELETE FROM photos WHERE filename=?", (filename,))
@@ -549,13 +637,15 @@ def delete_photo():
     except Exception as e:
         logger.error(f"Delete error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/check_login', methods=['POST'])
 def check_login():
     data = request.json
-    # Wir prüfen einfach, ob das gesendete Passwort mit dem Admin-Token übereinstimmt
     if data.get('admin_token') == CONFIG['ADMIN_TOKEN']:
         return jsonify({'success': True})
     return jsonify({'error': 'Wrong password'}), 403
+
 
 def start_background_services():
     init_db()

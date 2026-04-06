@@ -1,53 +1,56 @@
-# 🌍 Travelsite – Deine private Reise-Galerie
+# Travelsite – Private Reise-Galerie
 
-**Travelsite** ist eine selbst gehostete Webanwendung, um deine Reisefotos auf einer interaktiven Karte zu visualisieren.  
-Sie erstellt automatisch aus den EXIF-Daten deiner Bilder eine Reiseroute, berechnet Statistiken wie zurückgelegte Kilometer und besuchte Länder und präsentiert alles in einer modernen Galerie.
+**Travelsite** ist eine selbst gehostete Webanwendung, um Reisefotos auf einer interaktiven 3D-Karte zu visualisieren. Die App liest GPS- und EXIF-Daten direkt aus den Bildern, berechnet daraus eine Reiseroute über die OSRM-API und präsentiert alles in einer modernen Galerie mit filmischen Kameraanimationen.
 
-Das Projekt ist darauf ausgelegt, leichtgewichtig und privat zu sein. Ideal für das Hosting auf einem NAS zum Beispiel Synology oder einem kleinen VPS.
-
----
-
-## ✨ Features
-
-### 🗺 Interaktive Karte
-Zeigt den genauen Aufnahmeort jedes Fotos an und verbindet sie zu einer Route. Klicke auf Marker, um direkt zum Foto zu springen.
-
-### 📸 Browser-Upload (Neu!)
-Lade Fotos direkt über den Browser hoch – auch vom Smartphone aus. Kein FTP oder SSH nötig.
-
-### 📊 Live-Statistiken
-Berechnet automatisch:
-- Zurückgelegte Distanz in km  
-- Anzahl der besuchten Länder  
-- Dauer der Reise  
-- Besucherzähler: Sieh, wie viele Freunde deine Reise verfolgen.
-
-### 🔒 Privat und Sicher
-Zugriff für Zuschauer nur über einen geheimen Token-Link möglich. Der Upload ist durch ein separates Admin-Passwort geschützt.
-
-### 📱 Mobile-First
-- Swipe Links/Rechts: Nächstes/Vorheriges Foto. 
-- Swipe Hoch/Runter: Springt direkt zum nächsten/vorherigen Land.
-- Fullscreen: Klick auf das Bild für volle Auflösung.
-
-### 🤖 Automatischer Scanner
-Überwacht deinen Foto-Ordner und fügt neue Bilder automatisch hinzu.
-
-### ⚡ Performance
-Generiert Thumbnails im Hintergrund für schnelles Laden.
-
-### 🐳 Docker-Ready
-Einfaches Deployment als Container.
+Konzipiert für den Betrieb auf einem NAS (z. B. Synology) oder einem kleinen VPS – leichtgewichtig, privat, ohne externe Dienste außer der Kartendarstellung.
 
 ---
 
-## 🚀 Installation & Start (Docker)
+## Features
 
-Der einfachste Weg, Travelsite zu nutzen, ist Docker.
+### 3D-Karte mit MapLibre GL JS
+- Interaktive Karte mit 3D-Terrain und extrudierten Gebäuden (via MapTiler)
+- Filmische Kameraflüge zu jedem Foto-Standort mit automatischem Orbit-Effekt nach der Landung
+- Foto-Marker clustern beim Rauszoomen und expandieren per Klick
+- Fallback auf OpenStreetMap-Raster, wenn kein MapTiler-Key konfiguriert ist
 
-### 1. Container starten
+### Backend-Routing via OSRM
+- Straßenrouten werden serverseitig über die öffentliche OSRM Driving API berechnet
+- Ergebnisse werden dauerhaft in SQLite gecacht – kein erneuter API-Aufruf bei jedem Seitenbesuch
+- Fehlende Routen werden automatisch im Hintergrund nachgeladen
+- Strecken über 500 km (Flüge) werden als Luftlinie dargestellt
 
-Führe folgenden Befehl aus und passe die Pfade sowie den Token an:
+### Browser-Upload
+- Fotos direkt über den Browser hochladen, auch vom Smartphone
+- Kein FTP oder SSH erforderlich
+- Unterstützt nachträgliches Setzen von GPS-Koordinaten für Fotos ohne EXIF-Standort
+
+### Automatischer Foto-Scanner
+- Überwacht den Foto-Ordner kontinuierlich und indiziert neue Bilder automatisch
+- Extrahiert GPS-Koordinaten und Aufnahmedatum aus EXIF-Daten (PIL + piexif als Fallback)
+- Fotos ohne GPS-Daten werden in einen separaten Ordner verschoben
+
+### Live-Statistiken
+- Zurückgelegte Distanz in km
+- Anzahl besuchter Länder
+- Reisedauer in Tagen
+- Besucherzähler (sessionbasiert, 1-Stunden-Fenster)
+
+### Sicherheit & Datenschutz
+- Lesezugriff nur über einen geheimen Token-Link
+- Upload und Verwaltung über ein separates Admin-Passwort geschützt
+- Keine Nutzerkonten, keine Datenbank außer SQLite
+
+### Performance
+- Thumbnails werden im Hintergrund generiert (max. 800×800 px)
+- Route-GeoJSON wird einmalig vom Backend berechnet und gecacht
+- WAL-Modus für die SQLite-Datenbank verhindert Lese-/Schreibkonflikte
+
+---
+
+## Installation
+
+### Docker (empfohlen)
 
 ```bash
 docker run -d \
@@ -58,65 +61,108 @@ docker run -d \
   -e ACCESS_TOKEN="dein-geheimes-passwort" \
   -e ADMIN_TOKEN="admin-upload-passwort" \
   -e CONTACT_EMAIL="deine@email.de" \
+  -e MAPTILER_API_KEY="dein-maptiler-key" \
   --restart always \
   ghcr.io/alex10000121/travelsite:latest
- ```
-### Zugriff
-Öffne deinen Browser und rufe die Seite mit dem Token auf:
-http://DEINE-IP:5000/?token=dein-geheimes-passwort
+```
 
-### 🎮 Bedienung & Tricks
-Admin-Upload (Versteckt)
-Um Fotos hochzuladen, ohne SSH-Zugriff zu benötigen:
-1. Klicke doppelt (schnell) auf den Statistik-Button (oben rechts, das Balkendiagramm-Icon). 
-2. Gib das ADMIN_TOKEN ein. 
-3. Wähle Bilder aus und lade sie hoch.
+Anschließend die Seite im Browser öffnen:
 
-Navigation
+```
+http://DEINE-IP:5050/?token=dein-geheimes-passwort
+```
 
-Pfeiltasten (PC): ⬅️ ➡️ für Fotos, ⬆️ ⬇️ für Länderwechsel.
-
-Touch (Handy): Wischen für Navigation, Tippen für Vollbild.
-
-## ⚙️ Konfiguration (Umgebungsvariablen)
-| Variable      | Standardwert   | Beschreibung                                            
-|---------------|----------------|---------------------------------------------------------
-| PHOTO_DIR     | /photos        | Ordner im Container, in dem die Originalfotos liegen.   
-| THUMB_DIR     | /data/thumbs   | Speicherort für generierte Vorschaubilder.              
-| DB_PATH       | /data/trips.db | Pfad zur SQLite-Datenbank.                              
-| ACCESS_TOKEN  | geheim123      | Besucher-Token: Für den Lesezugriff auf die Seite.                 
-| Admin_Token   | admin_geheim   | Upload-Passwort: Für den Datei-Upload via Browser.
-| CONTACT_EMAIL | ...            | E-Mail-Adresse, die auf der Login-Seite angezeigt wird.
-
-
-Um das Projekt lokal ohne Docker zu testen:
-1. Repository klonen
+### Lokal ohne Docker
 
 ```bash
- git clone https://github.com/alex10000121/travelsite.git 
-```
-2. Abhängigkeiten installieren
-
-```bash 
+git clone https://github.com/alex10000121/travelsite.git
+cd travelsite
 pip install -r requirements.txt
-```
-3. App starten
-
-```bash 
 python app.py
 ```
 
-Der Server startet unter:http://127.0.0.1:5000/?token=geheim123
-## 📂 Projektstruktur
-- app.py: Backend-Logik mit Flask, Foto-Scanner und API.
-- templates: 
-  - index.html: Die Hauptanwendung.
-  - login.html: Vorschaltseite bei fehlendem Token.
-  - base.html: Grundgerüst.
-- static: 
-  - style.css: Modernes Dark-Mode Design.
-  - script.js: Frontend-Logik, Leaflet-Karte, Swipe-Erkennung.
-- Dockerfile: Bauplan für das Image inklusive Gunicorn und Background-Worker Setup.
-## 🛡 Lizenz & Credits
+Die App ist dann erreichbar unter:
+
+```
+http://127.0.0.1:5000/?token=geheim123
+```
+
+---
+
+## Konfiguration
+
+Alle Einstellungen werden über Umgebungsvariablen gesetzt. Für den lokalen Betrieb kann eine `.env`-Datei verwendet werden:
+
+```env
+ACCESS_TOKEN=dein-geheimes-passwort
+ADMIN_TOKEN=admin-upload-passwort
+CONTACT_EMAIL=deine@email.de
+MAPTILER_API_KEY=dein-maptiler-key
+PHOTO_DIR=./photos
+THUMB_DIR=./data/thumbs
+DB_PATH=./data/trips.db
+```
+
+| Variable         | Standardwert            | Beschreibung                                                          |
+|------------------|-------------------------|-----------------------------------------------------------------------|
+| `ACCESS_TOKEN`   | `geheim123`             | Token für den Lesezugriff – wird an die URL angehängt                 |
+| `ADMIN_TOKEN`    | `admin_geheim`          | Passwort für Upload, Löschen und GPS-Korrekturen                      |
+| `MAPTILER_API_KEY` | *(leer)*              | API-Key für MapTiler (3D-Terrain, Gebäude). Ohne Key: OSM-Fallback    |
+| `CONTACT_EMAIL`  | `deine.email@beispiel.de` | Wird auf der Login-Seite angezeigt                                  |
+| `PHOTO_DIR`      | `/photos`               | Ordner mit den Original-Fotos                                         |
+| `THUMB_DIR`      | `/data/thumbs`          | Speicherort für generierte Vorschaubilder                             |
+| `DB_PATH`        | `/data/trips.db`        | Pfad zur SQLite-Datenbank                                             |
+
+> **MapTiler API-Key**: Einen kostenlosen Key gibt es unter [maptiler.com](https://www.maptiler.com/). Ohne Key läuft die Karte als 2D-OpenStreetMap ohne Terrain und 3D-Gebäude.
+
+---
+
+## Bedienung
+
+### Galerie-Navigation
+
+| Aktion | PC | Mobil |
+|---|---|---|
+| Nächstes / Vorheriges Foto | `→` / `←` | Wischen links / rechts |
+| Nächstes / Vorheriges Land | `↑` / `↓` | Wischen hoch / runter |
+| Vollbild | Klick auf Foto | Tippen auf Foto |
+
+### Admin-Funktionen
+
+Der Admin-Bereich ist versteckt und wird durch einen Doppelklick auf den Statistik-Button (oben rechts) geöffnet. Nach Eingabe des `ADMIN_TOKEN` stehen folgende Funktionen zur Verfügung:
+
+- **Fotos hochladen** – direkt über den Browser, auch mehrere gleichzeitig
+- **GPS-Koordinaten korrigieren** – für Fotos ohne EXIF-Standort
+- **Fotos löschen** – entfernt Original, Thumbnail und DB-Eintrag
+
+---
+
+## Projektstruktur
+
+```
+travelsite/
+├── app.py                  # Flask-Backend, EXIF-Parser, OSRM-Routing, API
+├── requirements.txt        # Python-Abhängigkeiten
+├── Dockerfile              # Container-Bauplan mit Gunicorn
+├── templates/
+│   ├── base.html           # HTML-Grundgerüst
+│   ├── index.html          # Hauptanwendung
+│   └── login.html          # Token-Eingabeseite
+├── static/
+│   ├── main.js             # Einstiegspunkt, verdrahtet alle Module
+│   ├── map.js              # MapLibre-Kartencontroller (3D, Cluster, Routing)
+│   ├── api.js              # Alle fetch-Aufrufe zum Backend
+│   ├── gallery.js          # Galerie- und Swipe-Logik
+│   ├── admin.js            # Upload-, Lösch- und GPS-Fix-Logik
+│   └── style.css           # Dark-Mode Design
+└── tests/
+    ├── test_api.py         # Flask-Integrationstests
+    └── test_helpers.py     # Unit-Tests für Hilfsfunktionen
+```
+
+---
+
+## Lizenz & Credits
+
 Erstellt von Alex.
-Verwendet Leaflet.js für Karten und OpenStreetMap Daten.
+Verwendet [MapLibre GL JS](https://maplibre.org/) für die Karte, [MapTiler](https://www.maptiler.com/) für Terrain und Kartenstil sowie [OpenStreetMap](https://www.openstreetmap.org/) und [OSRM](https://project-osrm.org/) für Geodaten und Routing.

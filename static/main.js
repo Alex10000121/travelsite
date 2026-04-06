@@ -170,7 +170,7 @@ window.changeLocation = (dir) => gallery.changeLocation(dir);
 
 async function init() {
     try {
-        const { photos, stats } = await fetchRoute(TOKEN);
+        const { photos, stats, routes } = await fetchRoute(TOKEN);
 
         // --- Statistiken anzeigen ---
         if (stats) {
@@ -200,7 +200,7 @@ async function init() {
 
         // --- Module mit Daten versorgen ---
         admin.setAllPhotos(allPhotos);
-        map.renderPhotos(allPhotos);
+        map.renderPhotos(allPhotos, routes || []);
         gallery.loadPhotos(allPhotos, 0);   // löst onPhotoChange → map.setActiveMarker aus
 
     } catch (err) {

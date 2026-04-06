@@ -5,3 +5,4 @@ gunicorn
 werkzeug
 watchdog
 piexif
+requests
