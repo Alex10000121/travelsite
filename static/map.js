@@ -34,8 +34,9 @@ export class MapController {
         this._fixMarker     = null;
         this._mapReady      = false;
         this._clickConsumed = false;
-        this._spinFrame     = null;
-        this._isFlying      = false;
+        this._spinFrame          = null;
+        this._isFlying           = false;
+        this._spinOnNextMoveEnd  = false;
         this._initialCenter = [options.center?.[1] ?? 10, options.center?.[0] ?? 50];
         this._initialZoom   = options.zoom ?? 6;
         this._resizeHandler = () => this._map?.resize();
@@ -90,6 +91,8 @@ export class MapController {
                 }
             }
         });
+
+        this._map.on('error', () => {});
 
         this._map.on('click', (e) => {
             if (!this._clickConsumed) {
@@ -239,6 +242,7 @@ export class MapController {
     _setupEvents() {
         this._map.on('click', 'unclustered-point', (e) => {
             this._clickConsumed = true;
+            this._spinOnNextMoveEnd = true;
             this._onMarkerClick?.(e.features[0].properties.index);
         });
 
@@ -292,15 +296,20 @@ export class MapController {
         const degreesPerFrame = 0.3;
         let rotated = 0;
 
+        const cancel = () => this._cancelSpin();
+        this._map.once('dragstart', cancel);
+        this._map.once('zoomstart', cancel);
+
         const spin = () => {
             if (rotated >= 360) {
+                this._map.setBearing(0);
+                this._map.off('dragstart', cancel);
+                this._map.off('zoomstart', cancel);
                 this._spinFrame = null;
                 return;
             }
-            if (!this._map.isZooming()) {
-                this._map.setBearing((this._map.getBearing() + degreesPerFrame) % 360);
-                rotated += degreesPerFrame;
-            }
+            this._map.setBearing(rotated);
+            rotated += degreesPerFrame;
             this._spinFrame = requestAnimationFrame(spin);
         };
 
@@ -335,7 +344,7 @@ export class MapController {
             center: [photo.lon, photo.lat],
             zoom: 15,
             pitch: this._isMobile ? 30 : 50,
-            bearing: (this._map.getBearing() + 17) % 360,
+            bearing: 0,
             curve: 2.5,
             speed: 0.6,
             essential: true
@@ -344,7 +353,10 @@ export class MapController {
         this._map.once('moveend', () => {
             if (!this._isFlying) return;
             this._isFlying = false;
-            this._startSpin();
+            if (this._spinOnNextMoveEnd) {
+                this._spinOnNextMoveEnd = false;
+                this._startSpin();
+            }
         });
     }
 
