@@ -1,240 +1,385 @@
-// Kapselt die gesamte Leaflet-Logik (benötigt globales `L` und markercluster-Plugin).
-// Keine Abhängigkeit zu API oder globalem State.
+const MAPTILER_KEY = document.body.dataset.maptilerKey || '';
+const MAPTILER_STYLE_URL = MAPTILER_KEY
+    ? `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${MAPTILER_KEY}`
+    : null;
 
-const STYLES = {
-    active: {
-        radius: 10,
-        fillColor: '#3b82f6',
-        color: null,   // wird im Konstruktor gesetzt (Dark-Mode abhängig)
-        weight: 4,
-        fillOpacity: 1
+const OSM_STYLE = {
+    version: 8,
+    sources: {
+        osm: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }
     },
-    inactive: {
-        radius: 6,
-        fillColor: '#64748b',
-        color: null,
-        weight: 1,
-        fillOpacity: 0.6
-    },
-    line: {
-        color: '#3b82f6',
-        weight: 3,
-        opacity: 0.5,
-        dashArray: '5, 10'
-    }
+    layers: [{ id: 'osm-tiles', type: 'raster', source: 'osm' }]
 };
+
+async function resolveStyle() {
+    if (!MAPTILER_STYLE_URL) return OSM_STYLE;
+    try {
+        const res = await fetch(MAPTILER_STYLE_URL, { method: 'HEAD' });
+        return res.ok ? MAPTILER_STYLE_URL : OSM_STYLE;
+    } catch (_) {
+        return OSM_STYLE;
+    }
+}
 
 export class MapController {
 
-    /**
-     * @param {HTMLElement} mapElement   - Das #map-DOM-Element
-     * @param {object}      [options]
-     * @param {number[]}    [options.center=[50,10]]   - Initiales Kartenzentrum [lat, lon]
-     * @param {number}      [options.zoom=6]           - Initialer Zoom-Level
-     * @param {number}      [options.flyDuration=1.5]  - Dauer der flyTo-Animation (Sekunden)
-     */
     constructor(mapElement, options = {}) {
-        const isDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-        const borderColor = isDark ? '#1e293b' : '#fff';
+        this._photos        = [];
+        this._activeIndex   = -1;
+        this._fixMarker     = null;
+        this._mapReady      = false;
+        this._clickConsumed = false;
+        this._spinFrame     = null;
+        this._isFlying      = false;
+        this._initialCenter = [options.center?.[1] ?? 10, options.center?.[0] ?? 50];
+        this._initialZoom   = options.zoom ?? 6;
+        this._resizeHandler = () => this._map?.resize();
 
-        this._styles = {
-            ...STYLES,
-            active:   { ...STYLES.active,   color: borderColor },
-            inactive: { ...STYLES.inactive, color: borderColor }
-        };
+        resolveStyle().then(style => this._initMap(mapElement, style));
+    }
 
-        this._tileUrl = isDark
-            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-            : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+    get _isMobile() {
+        return window.innerWidth <= 768;
+    }
 
-        this._flyDuration  = options.flyDuration ?? 1.5;
-        this._markers      = [];   // Index-synchron mit photos-Array; null wenn kein GPS
-        this._clusterGroup = null;
-        this._fixMarker    = null;
+    _initMap(mapElement, style) {
+        const usingMaptiler = style === MAPTILER_STYLE_URL;
 
-        // Leaflet-Karte initialisieren
-        this._map = L.map(mapElement, { zoomControl: false })
-            .setView(options.center ?? [50, 10], options.zoom ?? 6);
+        this._map = new maplibregl.Map({
+            container: mapElement,
+            style,
+            center: this._initialCenter,
+            zoom: this._initialZoom,
+            pitch: usingMaptiler ? 60 : 0,
+            bearing: 0,
+            attributionControl: true,
+            trackResize: false
+        });
 
-        L.control.zoom({ position: 'bottomright' }).addTo(this._map);
+        window.addEventListener('resize', this._resizeHandler);
+        this._map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
-        L.tileLayer(this._tileUrl, {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            maxZoom: 19
-        }).addTo(this._map);
+        this._map.on('load', () => {
+            this._map.resize();
 
-        // Karten-Klick: wird nach außen delegiert (z.B. für Fix-Modus)
+            if (usingMaptiler) {
+                this._setupTerrain();
+                this._setupBuildings();
+            }
+
+            this._setupSources();
+            this._setupLayers();
+            this._setupEvents();
+            this._mapReady = true;
+            this._updateSources();
+
+            if (this._activeIndex >= 0) {
+                const photo = this._photos[this._activeIndex];
+                if (photo?.lat && photo?.lon) {
+                    this._map.jumpTo({
+                        center: [photo.lon, photo.lat],
+                        zoom: 15,
+                        pitch: this._isMobile ? 30 : 50,
+                        bearing: 0
+                    });
+                }
+            }
+        });
+
         this._map.on('click', (e) => {
-            this._onMapClick?.(e.latlng.lat, e.latlng.lng);
+            if (!this._clickConsumed) {
+                this._onMapClick?.(e.lngLat.lat, e.lngLat.lng);
+            }
+            this._clickConsumed = false;
         });
     }
 
-    // -------------------------------------------------------------------------
-    // Callbacks (werden von außen gesetzt)
-    // -------------------------------------------------------------------------
+    _setupTerrain() {
+        const sources = this._map.getStyle().sources;
+        const demId = Object.keys(sources).find(id => sources[id].type === 'raster-dem');
+        if (!demId) return;
 
-    /**
-     * Wird aufgerufen, wenn der Nutzer auf einen Foto-Marker klickt.
-     * @param {function(index: number): void} fn
-     */
-    set onMarkerClick(fn) { this._onMarkerClick = fn; }
+        const demSrc = sources[demId];
+        this._map.addSource('terrain-dem', {
+            type: 'raster-dem',
+            url: demSrc.url,
+            tileSize: demSrc.tileSize ?? 256
+        });
+        this._map.setTerrain({ source: 'terrain-dem', exaggeration: 1.5 });
+    }
 
-    /**
-     * Wird aufgerufen, wenn der Nutzer auf die Karte klickt (ohne Marker).
-     * @param {function(lat: number, lon: number): void} fn
-     */
-    set onMapClick(fn) { this._onMapClick = fn; }
+    _setupBuildings() {
+        const buildingColor = [
+            'interpolate', ['linear'],
+            ['coalesce', ['get', 'render_height'], ['get', 'height'], 0],
+            0,   '#2d3a4a',
+            50,  '#3d5a7a',
+            150, '#5b8fa8',
+            300, '#89c4d9'
+        ];
 
-    // -------------------------------------------------------------------------
-    // Fotos rendern
-    // -------------------------------------------------------------------------
+        const styleLayers = this._map.getStyle().layers;
+        const existingExtrusions = styleLayers.filter(l => l.type === 'fill-extrusion');
 
-    /**
-     * Zeichnet Polyline + geclusterte Marker für alle Fotos.
-     * Bereits vorhandene Marker werden vorher entfernt.
-     *
-     * @param {Array<{lat: number|null, lon: number|null}>} photos
-     */
-    renderPhotos(photos) {
-        this._clearPhotos();
-
-        const validCoords = photos
-            .filter(p => p.lat != null && p.lon != null)
-            .map(p => [p.lat, p.lon]);
-
-        if (validCoords.length > 0) {
-            L.polyline(validCoords, this._styles.line).addTo(this._map);
+        if (existingExtrusions.length > 0) {
+            existingExtrusions.forEach(l => {
+                this._map.setLayoutProperty(l.id, 'visibility', 'visible');
+                if ((l.minzoom ?? 0) > 13) this._map.setLayerZoomRange(l.id, 13, l.maxzoom ?? 24);
+                this._map.setPaintProperty(l.id, 'fill-extrusion-color', buildingColor);
+                this._map.setPaintProperty(l.id, 'fill-extrusion-opacity', 0.95);
+            });
+            return;
         }
 
-        const cluster = L.markerClusterGroup({
-            showCoverageOnHover: false,
-            spiderfyDistanceMultiplier: 2
+        const sources = this._map.getStyle().sources;
+        const vectorId = ['maptiler_planet', 'openmaptiles', 'outdoor']
+            .find(id => sources[id]?.type === 'vector');
+        if (!vectorId) return;
+
+        try {
+            this._map.addLayer({
+                id: 'buildings-3d',
+                type: 'fill-extrusion',
+                source: vectorId,
+                'source-layer': 'building',
+                minzoom: 15,
+                paint: {
+                    'fill-extrusion-color': buildingColor,
+                    'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 5],
+                    'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
+                    'fill-extrusion-opacity': 0.95
+                }
+            });
+        } catch (_) {}
+    }
+
+    _setupSources() {
+        if (!this._map.getSource('photos')) {
+            this._map.addSource('photos', {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: [] },
+                cluster: true,
+                clusterMaxZoom: 13,
+                clusterRadius: 50
+            });
+        }
+        if (!this._map.getSource('route')) {
+            this._map.addSource('route', {
+                type: 'geojson',
+                data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } }
+            });
+        }
+    }
+
+    _setupLayers() {
+        if (!this._map.getLayer('route-line')) {
+            this._map.addLayer({
+                id: 'route-line',
+                type: 'line',
+                source: 'route',
+                paint: {
+                    'line-color': '#ef4444',
+                    'line-width': 3,
+                    'line-opacity': 0.85,
+                    'line-dasharray': [2, 4]
+                }
+            });
+        }
+        if (!this._map.getLayer('clusters')) {
+            this._map.addLayer({
+                id: 'clusters',
+                type: 'circle',
+                source: 'photos',
+                filter: ['has', 'point_count'],
+                paint: {
+                    'circle-color': '#ef4444',
+                    'circle-radius': ['step', ['get', 'point_count'], 15, 10, 20, 50, 25],
+                    'circle-opacity': 0.85,
+                    'circle-stroke-width': 2,
+                    'circle-stroke-color': '#fff'
+                }
+            });
+        }
+        if (!this._map.getLayer('cluster-count')) {
+            this._map.addLayer({
+                id: 'cluster-count',
+                type: 'symbol',
+                source: 'photos',
+                filter: ['has', 'point_count'],
+                layout: {
+                    'text-field': '{point_count_abbreviated}',
+                    'text-size': 12,
+                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold']
+                },
+                paint: { 'text-color': '#ffffff' }
+            });
+        }
+        if (!this._map.getLayer('unclustered-point')) {
+            this._map.addLayer({
+                id: 'unclustered-point',
+                type: 'circle',
+                source: 'photos',
+                filter: ['!', ['has', 'point_count']],
+                paint: {
+                    'circle-color': ['case', ['==', ['get', 'active'], true], '#ef4444', '#64748b'],
+                    'circle-radius': ['case', ['==', ['get', 'active'], true], 10, 6],
+                    'circle-opacity': ['case', ['==', ['get', 'active'], true], 1, 0.6],
+                    'circle-stroke-width': ['case', ['==', ['get', 'active'], true], 4, 1],
+                    'circle-stroke-color': '#ffffff'
+                }
+            });
+        }
+    }
+
+    _setupEvents() {
+        this._map.on('click', 'unclustered-point', (e) => {
+            this._clickConsumed = true;
+            this._onMarkerClick?.(e.features[0].properties.index);
         });
 
-        photos.forEach((photo, index) => {
-            if (photo.lat == null || photo.lon == null) {
-                this._markers.push(null);
+        this._map.on('click', 'clusters', (e) => {
+            this._clickConsumed = true;
+            const clusterId = e.features[0].properties.cluster_id;
+            this._map.getSource('photos').getClusterExpansionZoom(clusterId, (err, zoom) => {
+                if (err) return;
+                this._map.flyTo({ center: e.features[0].geometry.coordinates, zoom });
+            });
+        });
+
+        this._map.on('mouseenter', 'unclustered-point', () => { this._map.getCanvas().style.cursor = 'pointer'; });
+        this._map.on('mouseleave', 'unclustered-point', () => { this._map.getCanvas().style.cursor = ''; });
+        this._map.on('mouseenter', 'clusters',           () => { this._map.getCanvas().style.cursor = 'pointer'; });
+        this._map.on('mouseleave', 'clusters',           () => { this._map.getCanvas().style.cursor = ''; });
+    }
+
+    _buildPhotosGeoJSON() {
+        return {
+            type: 'FeatureCollection',
+            features: this._photos.flatMap((p, i) => {
+                if (p.lat == null || p.lon == null) return [];
+                return [{
+                    type: 'Feature',
+                    geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+                    properties: { index: i, active: i === this._activeIndex }
+                }];
+            })
+        };
+    }
+
+    _buildRouteGeoJSON() {
+        return {
+            type: 'Feature',
+            geometry: {
+                type: 'LineString',
+                coordinates: this._photos
+                    .filter(p => p.lat != null && p.lon != null)
+                    .map(p => [p.lon, p.lat])
+            }
+        };
+    }
+
+    _updateSources() {
+        this._map.getSource('photos')?.setData(this._buildPhotosGeoJSON());
+        this._map.getSource('route')?.setData(this._buildRouteGeoJSON());
+    }
+
+    _startSpin() {
+        const degreesPerFrame = 0.3;
+        let rotated = 0;
+
+        const spin = () => {
+            if (rotated >= 360) {
+                this._spinFrame = null;
                 return;
             }
-
-            const marker = L.circleMarker([photo.lat, photo.lon], { ...this._styles.inactive });
-
-            marker.on('click', () => {
-                this._onMarkerClick?.(index);
-            });
-
-            cluster.addLayer(marker);
-            this._markers.push(marker);
-        });
-
-        this._map.addLayer(cluster);
-        this._clusterGroup = cluster;
-    }
-
-    // -------------------------------------------------------------------------
-    // Aktiven Marker hervorheben & Karte fokussieren
-    // -------------------------------------------------------------------------
-
-    /**
-     * Hebt den Marker am angegebenen Index aktiv hervor, alle anderen inaktiv.
-     * Fliegt mit der Karte zum aktiven Marker.
-     *
-     * @param {number} activeIndex
-     * @param {{lat: number, lon: number}} photo - Koordinaten des aktiven Fotos
-     */
-    setActiveMarker(activeIndex, photo) {
-        this._markers.forEach((marker, index) => {
-            if (!marker) return;
-            marker.setStyle(
-                index === activeIndex ? this._styles.active : this._styles.inactive
-            );
-            if (index === activeIndex && marker.bringToFront) {
-                marker.bringToFront();
+            if (!this._map.isZooming()) {
+                this._map.setBearing((this._map.getBearing() + degreesPerFrame) % 360);
+                rotated += degreesPerFrame;
             }
+            this._spinFrame = requestAnimationFrame(spin);
+        };
+
+        this._spinFrame = requestAnimationFrame(spin);
+    }
+
+    _cancelSpin() {
+        if (this._spinFrame !== null) {
+            cancelAnimationFrame(this._spinFrame);
+            this._spinFrame = null;
+        }
+        this._isFlying = false;
+    }
+
+    set onMarkerClick(fn) { this._onMarkerClick = fn; }
+    set onMapClick(fn)    { this._onMapClick    = fn; }
+
+    renderPhotos(photos) {
+        this._photos = photos;
+        if (this._mapReady) this._updateSources();
+    }
+
+    setActiveMarker(activeIndex, photo) {
+        this._activeIndex = activeIndex;
+        if (this._mapReady) this._updateSources();
+        if (!photo?.lat || !photo?.lon || !this._map) return;
+
+        this._cancelSpin();
+        this._isFlying = true;
+
+        this._map.flyTo({
+            center: [photo.lon, photo.lat],
+            zoom: 15,
+            pitch: this._isMobile ? 30 : 50,
+            bearing: (this._map.getBearing() + 17) % 360,
+            curve: 2.5,
+            speed: 0.6,
+            essential: true
         });
 
-        const targetMarker = this._markers[activeIndex];
-        if (!targetMarker) return;
-
-        if (this._clusterGroup) {
-            this._clusterGroup.zoomToShowLayer(targetMarker, () => {});
-        } else if (photo?.lat != null && photo?.lon != null) {
-            this._map.flyTo(
-                [photo.lat, photo.lon],
-                10,
-                { animate: true, duration: this._flyDuration }
-            );
-        }
+        this._map.once('moveend', () => {
+            if (!this._isFlying) return;
+            this._isFlying = false;
+            this._startSpin();
+        });
     }
 
-    // -------------------------------------------------------------------------
-    // Fix-Marker (GPS nachträglich setzen)
-    // -------------------------------------------------------------------------
-
-    /**
-     * Setzt oder verschiebt den draggbaren Fix-Marker auf der Karte.
-     * @param {number} lat
-     * @param {number} lon
-     */
     setFixMarker(lat, lon) {
+        if (!this._map) return;
         if (this._fixMarker) {
-            this._fixMarker.setLatLng([lat, lon]);
+            this._fixMarker.setLngLat([lon, lat]);
         } else {
-            this._fixMarker = L.marker([lat, lon], {
-                draggable: true,
-                autoPan: true
-            }).addTo(this._map);
+            this._fixMarker = new maplibregl.Marker({ draggable: true, color: '#ef4444' })
+                .setLngLat([lon, lat])
+                .addTo(this._map);
         }
-        this._map.panTo([lat, lon]);
+        this._map.panTo([lon, lat]);
     }
 
-    /**
-     * Entfernt den Fix-Marker von der Karte.
-     */
     removeFixMarker() {
         if (this._fixMarker) {
-            this._map.removeLayer(this._fixMarker);
+            this._fixMarker.remove();
             this._fixMarker = null;
         }
     }
 
-    /**
-     * Gibt die aktuelle Position des Fix-Markers zurück.
-     * @returns {{lat: number, lon: number}|null}
-     */
     getFixMarkerLatLng() {
         if (!this._fixMarker) return null;
-        const ll = this._fixMarker.getLatLng();
+        const ll = this._fixMarker.getLngLat();
         return { lat: ll.lat, lon: ll.lng };
     }
 
-    /**
-     * Gibt zurück, ob momentan ein Fix-Marker auf der Karte liegt.
-     * @returns {boolean}
-     */
     hasFixMarker() {
         return this._fixMarker !== null;
     }
 
-    // -------------------------------------------------------------------------
-    // Hilfsmethoden
-    // -------------------------------------------------------------------------
-
-    /**
-     * Gibt das aktuelle Kartenzentrum zurück.
-     * @returns {{lat: number, lon: number}}
-     */
     getCenter() {
+        if (!this._map) return { lat: 0, lon: 0 };
         const c = this._map.getCenter();
         return { lat: c.lat, lon: c.lng };
-    }
-
-    // Interne Hilfsmethode: entfernt alle gerenderten Foto-Marker
-    _clearPhotos() {
-        if (this._clusterGroup) {
-            this._map.removeLayer(this._clusterGroup);
-            this._clusterGroup = null;
-        }
-        this._markers = [];
     }
 }

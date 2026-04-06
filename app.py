@@ -29,7 +29,8 @@ CONFIG = {
     'DB_PATH': os.environ.get('DB_PATH', './data/trips.db'),
     'ACCESS_TOKEN': os.environ.get('ACCESS_TOKEN', 'geheim123'),
     'ADMIN_TOKEN': os.environ.get('ADMIN_TOKEN', 'admin_geheim'),
-    'CONTACT_EMAIL': os.environ.get('CONTACT_EMAIL', 'deine.email@beispiel.de')
+    'CONTACT_EMAIL': os.environ.get('CONTACT_EMAIL', 'deine.email@beispiel.de'),
+    'MAPTILER_API_KEY': os.environ.get('MAPTILER_API_KEY', '')
 }
 
 SUPPORTED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heic')
@@ -323,7 +324,8 @@ def initial_scan(abs_photo_dir):
 def index():
     token = request.args.get('token')
     if token == CONFIG['ACCESS_TOKEN']:
-        return render_template('index.html', token=token, visitor_count=track_visitor_count())
+        return render_template('index.html', token=token, visitor_count=track_visitor_count(),
+                               maptiler_key=CONFIG['MAPTILER_API_KEY'])
     return render_template('login.html', contact_email=CONFIG['CONTACT_EMAIL'])
 
 
