@@ -12,7 +12,7 @@ from datetime import datetime
 
 import requests
 
-from flask import Flask, render_template, request, jsonify, send_file, abort
+from flask import Flask, render_template, request, jsonify, send_file, make_response, abort
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from PIL import Image, ImageOps
@@ -489,6 +489,12 @@ def api_route():
     })
 
 
+def _cached_file(path, max_age=31536000):
+    response = make_response(send_file(path))
+    response.headers['Cache-Control'] = f'public, max-age={max_age}, immutable'
+    return response
+
+
 @app.route('/api/thumb/<path:filename>')
 def api_thumb(filename):
     token = request.args.get('token', '')
@@ -499,14 +505,14 @@ def api_thumb(filename):
     if not os.path.commonpath([base_dir, requested_path]) == base_dir: abort(403)
 
     if request.args.get('size') == 'original':
-        if os.path.exists(requested_path): return send_file(requested_path)
+        if os.path.exists(requested_path): return _cached_file(requested_path)
 
     flat_name = filename.replace('/', '_').replace('\\', '_')
     if not flat_name.lower().endswith('.jpg'): flat_name += '.jpg'
     thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
 
-    if os.path.exists(thumb_path): return send_file(thumb_path)
-    if os.path.exists(requested_path): return send_file(requested_path)
+    if os.path.exists(thumb_path): return _cached_file(thumb_path)
+    if os.path.exists(requested_path): return _cached_file(requested_path)
     abort(404)
 
 
