@@ -257,6 +257,7 @@ def init_db():
                     location TEXT
                 )
             ''')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_photos_timestamp ON photos(timestamp)')
             conn.execute('CREATE TABLE IF NOT EXISTS global_stats (key TEXT PRIMARY KEY, value INTEGER)')
             conn.execute("INSERT OR IGNORE INTO global_stats (key, value) VALUES ('visitor_count', 0)")
             conn.execute('CREATE TABLE IF NOT EXISTS active_sessions (hash TEXT PRIMARY KEY, timestamp REAL)')
