@@ -234,7 +234,6 @@ def generate_thumbnail(original_path, thumb_path):
 def get_db():
     conn = sqlite3.connect(CONFIG['DB_PATH'], timeout=20)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     try:
         yield conn
         conn.commit()
@@ -248,6 +247,7 @@ def get_db():
 def init_db():
     try:
         with get_db() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS photos (
                     filename TEXT PRIMARY KEY, 
