@@ -3,6 +3,9 @@
 {% block title %}Travelsite{% endblock %}
 
 {% block head %}
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="preconnect" href="https://api.maptiler.com">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
 {% endblock %}
 
@@ -183,7 +186,7 @@
         </div>
     </div>
 
-    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin=""></script>
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin="" defer></script>
 
     <script type="module" src="{{ url_for('static', filename='main.js') }}"></script>
 {% endblock %}
