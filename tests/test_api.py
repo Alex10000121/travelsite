@@ -256,20 +256,6 @@ class TestUploadResponseFields:
         assert data.get('missing_gps') is True
 
 
-class TestDeletePhoto:
-    def test_invalid_token_returns_403(self, client):
-        response = client.post('/api/delete',
-                               data=json.dumps({'admin_token': 'wrong', 'filename': 'test.jpg'}),
-                               content_type='application/json')
-        assert response.status_code == 403
-
-    def test_missing_filename_returns_400(self, client):
-        response = client.post('/api/delete',
-                               data=json.dumps({'admin_token': 'test_admin'}),
-                               content_type='application/json')
-        assert response.status_code == 400
-
-
 class TestUpdateLocation:
     def test_invalid_token_returns_403(self, client):
         response = client.post('/api/update_location',

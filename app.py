@@ -1,4 +1,5 @@
 import os
+import secrets
 import sqlite3
 import threading
 import time
@@ -12,6 +13,8 @@ from datetime import datetime
 import requests
 
 from flask import Flask, render_template, request, jsonify, send_file, abort
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from PIL import Image, ImageOps
 from PIL.ExifTags import GPSTAGS
 import reverse_geocoder as rg
@@ -25,6 +28,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://",
+)
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify(error="Zu viele Anfragen. Bitte warte eine Minute und versuche es erneut."), 429
 
 # Konfiguration
 CONFIG = {
@@ -391,9 +405,10 @@ def initial_scan(abs_photo_dir):
 # --- ROUTES ---
 
 @app.route('/')
+@limiter.limit("5 per minute")
 def index():
     token = request.args.get('token')
-    if token == CONFIG['ACCESS_TOKEN']:
+    if token and secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']):
         return render_template('index.html', token=token, visitor_count=track_visitor_count(),
                                maptiler_key=CONFIG['MAPTILER_API_KEY'])
     return render_template('login.html', contact_email=CONFIG['CONTACT_EMAIL'])
@@ -401,7 +416,8 @@ def index():
 
 @app.route('/api/route')
 def api_route():
-    if request.args.get('token') != CONFIG['ACCESS_TOKEN']: abort(403)
+    token = request.args.get('token', '')
+    if not secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']): abort(403)
 
     photos = []
     try:
@@ -475,7 +491,8 @@ def api_route():
 
 @app.route('/api/thumb/<path:filename>')
 def api_thumb(filename):
-    if request.args.get('token') != CONFIG['ACCESS_TOKEN']: abort(403)
+    token = request.args.get('token', '')
+    if not secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']): abort(403)
 
     base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
     requested_path = os.path.abspath(os.path.join(base_dir, filename))
@@ -495,7 +512,7 @@ def api_thumb(filename):
 
 @app.route('/api/upload', methods=['POST'])
 def upload_photo():
-    if request.form.get('admin_token') != CONFIG['ADMIN_TOKEN']:
+    if not secrets.compare_digest(request.form.get('admin_token', ''), CONFIG['ADMIN_TOKEN']):
         return jsonify({'error': 'Invalid Password'}), 403
 
     if 'photo' not in request.files: return jsonify({'error': 'No file'}), 400
@@ -578,7 +595,7 @@ def upload_photo():
 @app.route('/api/update_location', methods=['POST'])
 def update_location():
     data = request.json
-    if data.get('admin_token') != CONFIG['ADMIN_TOKEN']:
+    if not secrets.compare_digest(data.get('admin_token', ''), CONFIG['ADMIN_TOKEN']):
         return jsonify({'error': 'Falsches Passwort'}), 403
 
     filename = data.get('filename')
@@ -606,43 +623,11 @@ def update_location():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/delete', methods=['POST'])
-def delete_photo():
-    data = request.json
-    if data.get('admin_token') != CONFIG['ADMIN_TOKEN']:
-        return jsonify({'error': 'Falsches Passwort'}), 403
-
-    filename = data.get('filename')
-    if not filename: return jsonify({'error': 'Kein Dateiname'}), 400
-
-    try:
-        base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
-        file_path = os.path.abspath(os.path.join(base_dir, filename))
-
-        if not os.path.commonpath([base_dir, file_path]) == base_dir: abort(403)
-
-        flat_name = filename.replace('/', '_').replace('\\', '_')
-        if not flat_name.lower().endswith('.jpg'): flat_name += '.jpg'
-        thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
-
-        if os.path.exists(file_path): os.remove(file_path)
-        if os.path.exists(thumb_path): os.remove(thumb_path)
-
-        with get_db() as conn:
-            conn.execute("DELETE FROM photos WHERE filename=?", (filename,))
-
-        logger.info(f"Deleted photo: {filename}")
-        return jsonify({'success': True})
-
-    except Exception as e:
-        logger.error(f"Delete error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
 @app.route('/api/check_login', methods=['POST'])
+@limiter.limit("5 per minute")
 def check_login():
     data = request.json
-    if data.get('admin_token') == CONFIG['ADMIN_TOKEN']:
+    if secrets.compare_digest(data.get('admin_token', ''), CONFIG['ADMIN_TOKEN']):
         return jsonify({'success': True})
     return jsonify({'error': 'Wrong password'}), 403
 

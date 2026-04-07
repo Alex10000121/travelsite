@@ -65,29 +65,6 @@ export async function uploadPhoto(formData) {
 }
 
 /**
- * Löscht eine Fotodatei auf dem Server.
- * @param {string} password - Admin-Passwort
- * @param {string} filename - Dateiname des zu löschenden Fotos
- * @returns {Promise<void>} - Löst auf bei Erfolg, wirft Error bei Misserfolg
- */
-export async function deletePhoto(password, filename) {
-    let res;
-    try {
-        res = await fetch('/api/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ admin_token: password, filename })
-        });
-    } catch (err) {
-        throw new Error(`Netzwerkfehler beim Löschen von "${filename}": ${err.message}`);
-    }
-
-    if (!res.ok) {
-        throw new Error(`Löschen fehlgeschlagen (HTTP ${res.status})`);
-    }
-}
-
-/**
  * Speichert nachträglich GPS-Koordinaten für ein bereits hochgeladenes Foto.
  * @param {string} password - Admin-Passwort
  * @param {string} filename - Dateiname des Fotos

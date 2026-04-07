@@ -7,12 +7,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../static/api.js', () => ({
     checkLogin:     vi.fn(),
     uploadPhoto:    vi.fn(),
-    deletePhoto:    vi.fn(),
     updateLocation: vi.fn(),
 }));
 
 import { AdminController } from '../../static/admin.js';
-import { deletePhoto, updateLocation } from '../../static/api.js';
+import { updateLocation } from '../../static/api.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -90,70 +89,6 @@ describe('handleMapClick', () => {
         admin._missingGpsQueue = ['foto.jpg'];
         admin.handleMapClick(47.123, 8.456);
         expect(map.setFixMarker).toHaveBeenCalledWith(47.123, 8.456);
-    });
-});
-
-// ---------------------------------------------------------------------------
-// _runCleanup (Warteschlangen-Bereinigung)
-// ---------------------------------------------------------------------------
-
-describe('_runCleanup', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-        vi.stubGlobal('alert', vi.fn());
-        vi.stubGlobal('location', { reload: vi.fn() });
-    });
-
-    it('ruft deletePhoto für jede Datei auf', async () => {
-        deletePhoto.mockResolvedValue();
-        const admin = makeAdmin();
-        const files = [{ filename: 'a.jpg' }, { filename: 'b.jpg' }];
-
-        await admin._runCleanup(files, 'geheim');
-
-        expect(deletePhoto).toHaveBeenCalledTimes(2);
-        expect(deletePhoto).toHaveBeenCalledWith('geheim', 'a.jpg');
-        expect(deletePhoto).toHaveBeenCalledWith('geheim', 'b.jpg');
-    });
-
-    it('ruft location.reload auf wenn mindestens eine Datei gelöscht wurde', async () => {
-        deletePhoto.mockResolvedValue();
-        const admin = makeAdmin();
-
-        await admin._runCleanup([{ filename: 'a.jpg' }], 'geheim');
-
-        expect(location.reload).toHaveBeenCalled();
-    });
-
-    it('zeigt Fehlermeldung wenn deletePhoto immer fehlschlägt', async () => {
-        deletePhoto.mockRejectedValue(new Error('Netzwerkfehler'));
-        const admin = makeAdmin();
-
-        await admin._runCleanup([{ filename: 'a.jpg' }], 'falsch');
-
-        expect(location.reload).not.toHaveBeenCalled();
-        expect(alert).toHaveBeenCalledWith(
-            expect.stringContaining('Konnte Dateien nicht löschen')
-        );
-    });
-
-    it('löscht das Passwort aus dem RAM nach der Bereinigung', async () => {
-        deletePhoto.mockResolvedValue();
-        const admin = makeAdmin();
-        admin._tempPassword = 'geheim';
-
-        await admin._runCleanup([{ filename: 'a.jpg' }], 'geheim');
-
-        expect(admin._tempPassword).toBeNull();
-    });
-
-    it('verarbeitet eine leere Dateiliste ohne Fehler', async () => {
-        const admin = makeAdmin();
-        await admin._runCleanup([], 'geheim');
-        expect(deletePhoto).not.toHaveBeenCalled();
-        expect(alert).toHaveBeenCalledWith(
-            expect.stringContaining('Konnte Dateien nicht löschen')
-        );
     });
 });
 
@@ -240,15 +175,3 @@ describe('_processNextFix', () => {
     });
 });
 
-// ---------------------------------------------------------------------------
-// setAllPhotos
-// ---------------------------------------------------------------------------
-
-describe('setAllPhotos', () => {
-    it('speichert die Fotoliste intern', () => {
-        const admin = makeAdmin();
-        const photos = [{ filename: 'x.jpg', lat: 1, lon: 2 }];
-        admin.setAllPhotos(photos);
-        expect(admin._allPhotos).toBe(photos);
-    });
-});

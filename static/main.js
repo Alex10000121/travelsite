@@ -38,8 +38,6 @@ const dom = {
     // Buttons
     btnStats:       document.getElementById('open-stats'),
     btnHelp:        document.getElementById('open-help'),
-    btnFixMissing:  document.getElementById('btn-fix-missing'),
-
     // Modals
     statsModal:     document.getElementById('stats-modal'),
     tutorialModal:  document.getElementById('tutorial-modal'),
@@ -79,7 +77,6 @@ const gallery = new GalleryController({
 
 const admin = new AdminController({
     btnStats:      dom.btnStats,
-    btnFixMissing: dom.btnFixMissing,
     statsModal:    dom.statsModal,
     loginModal:    dom.loginModal,
     loginForm:     dom.loginForm,
@@ -191,15 +188,7 @@ async function init() {
             countryCode: extractCountryCode(p.location),
         }));
 
-        // --- Fotos ohne GPS: Warn-Button einblenden ---
-        const hasGarbage = allPhotos.some(p => p.lat == null || p.lon == null);
-        if (hasGarbage && dom.btnFixMissing) {
-            dom.btnFixMissing.style.display    = 'flex';
-            dom.btnFixMissing.style.animation  = 'pulse 2s infinite';
-        }
-
         // --- Module mit Daten versorgen ---
-        admin.setAllPhotos(allPhotos);
         map.renderPhotos(allPhotos, routes || []);
         gallery.loadPhotos(allPhotos, 0);   // löst onPhotoChange → map.setActiveMarker aus
 

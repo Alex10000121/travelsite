@@ -1,7 +1,7 @@
 // Admin-Logik: Login, Upload, GPS-Fix-Assistent, Datenbereinigung.
 // Keine Abhängigkeit zu gallery.js — Kommunikation nur über Callbacks.
 
-import { checkLogin, uploadPhoto, deletePhoto, updateLocation } from './api.js';
+import { checkLogin, uploadPhoto, updateLocation } from './api.js';
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktion: countryCode aus Location-String ableiten
@@ -34,7 +34,6 @@ export class AdminController {
     /**
      * @param {object} dom
      * @param {HTMLElement}       dom.btnStats        - Statistik-Button (Doppelklick → Upload)
-     * @param {HTMLElement}       dom.btnFixMissing   - "Aufräumen"-Button
      * @param {HTMLElement}       dom.statsModal      - Statistik-Modal
      * @param {HTMLElement}       dom.loginModal      - Login-Modal
      * @param {HTMLFormElement}   dom.loginForm       - Login-Formular
@@ -60,7 +59,6 @@ export class AdminController {
         // Passwort wird nur für die Dauer einer Aktion im RAM gehalten
         this._tempPassword = null;
 
-        // 'upload' oder 'cleanup' — was soll nach dem Login passieren?
         this._loginAction = 'upload';
 
         // Doppelklick-Timer für den Stats-Button
@@ -73,9 +71,6 @@ export class AdminController {
         // Promise-Resolve für den Pre-Upload Ort-Picker
         this._locationPickResolve = null;
 
-        // Referenz auf alle bekannten Fotos (wird von außen gesetzt)
-        this._allPhotos = [];
-
         /** @type {function(photos: Array): void}  Aufgerufen nach erfolgreichem Upload */
         this._onUploadComplete = null;
 
@@ -83,7 +78,6 @@ export class AdminController {
         this._onFixingModeChange = null;
 
         this._bindStatsButton();
-        this._bindCleanupButton();
         this._bindLoginForm();
         this._bindFileInput();
         this._bindFixSaveButton();
@@ -102,15 +96,6 @@ export class AdminController {
     // -------------------------------------------------------------------------
     // Öffentliche Methoden
     // -------------------------------------------------------------------------
-
-    /**
-     * Muss aufgerufen werden, sobald die Foto-Liste vom Server geladen wurde,
-     * damit der Cleanup-Prozess weiß, welche Fotos GPS-los sind.
-     * @param {Array} photos
-     */
-    setAllPhotos(photos) {
-        this._allPhotos = photos;
-    }
 
     // -------------------------------------------------------------------------
     // Login-Modal
@@ -169,9 +154,6 @@ export class AdminController {
 
         if (this._loginAction === 'upload') {
             this._dom.fileInput?.click();
-        } else if (this._loginAction === 'cleanup') {
-            const garbage = this._allPhotos.filter(p => p.lat == null || p.lon == null);
-            this._runCleanup(garbage, password);
         }
     }
 
@@ -198,54 +180,6 @@ export class AdminController {
                 }, 300);
             }
         });
-    }
-
-    // -------------------------------------------------------------------------
-    // Cleanup-Button
-    // -------------------------------------------------------------------------
-
-    _bindCleanupButton() {
-        const { btnFixMissing } = this._dom;
-        if (!btnFixMissing) return;
-
-        btnFixMissing.addEventListener('click', () => {
-            this._loginAction = 'cleanup';
-            this._openLoginModal();
-        });
-    }
-
-    // -------------------------------------------------------------------------
-    // Datenbereinigung (Fotos ohne GPS löschen)
-    // -------------------------------------------------------------------------
-
-    async _runCleanup(files, password) {
-        const { progressModal, progressText, progressBar } = this._dom;
-
-        if (progressModal) {
-            progressModal.classList.add('show');
-            if (progressText) progressText.innerText = 'Räume auf...';
-            if (progressBar)  progressBar.style.width = '100%';
-        }
-
-        let deletedCount = 0;
-        for (const photo of files) {
-            try {
-                await deletePhoto(password, photo.filename);
-                deletedCount++;
-            } catch (e) {
-                console.error('Netzwerkfehler beim Löschen:', e);
-            }
-        }
-
-        this._tempPassword = null;
-
-        if (deletedCount > 0) {
-            alert(`Bereinigung abgeschlossen. ${deletedCount} defekte Dateien entfernt.`);
-            location.reload();
-        } else {
-            progressModal?.classList.remove('show');
-            alert('Konnte Dateien nicht löschen. Falsches Passwort?');
-        }
     }
 
     // -------------------------------------------------------------------------
