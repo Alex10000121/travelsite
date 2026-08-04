@@ -13,6 +13,7 @@ from datetime import datetime
 import requests
 
 from flask import Flask, render_template, request, jsonify, send_file, make_response, abort
+from flask_compress import Compress
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from PIL import Image, ImageOps
@@ -28,6 +29,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+Compress(app)
 
 limiter = Limiter(
     get_remote_address,
@@ -209,8 +211,17 @@ def fetch_missing_routes(missing_pairs):
             logger.warning(f"Route background fetch error {start_fn} -> {end_fn}: {e}")
 
 
-def generate_thumbnail(original_path, thumb_path):
-    if os.path.exists(thumb_path):
+def _thumb_path(filename, suffix=''):
+    flat_name = filename.replace('/', '_').replace('\\', '_')
+    if flat_name.lower().endswith('.jpg'):
+        flat_name = flat_name[:-4]
+    return os.path.join(CONFIG['THUMB_DIR'], f"{flat_name}{suffix}.jpg")
+
+
+def generate_thumbnails(original_path, thumb_path, blur_thumb_path):
+    need_main = not os.path.exists(thumb_path)
+    need_blur = not os.path.exists(blur_thumb_path)
+    if not need_main and not need_blur:
         return True
 
     try:
@@ -220,8 +231,16 @@ def generate_thumbnail(original_path, thumb_path):
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
 
-            img.thumbnail((800, 800))
-            img.save(thumb_path, "JPEG", quality=70, optimize=True)
+            if need_main:
+                main_img = img.copy()
+                main_img.thumbnail((800, 800))
+                main_img.save(thumb_path, "JPEG", quality=55, optimize=True)
+
+            if need_blur:
+                # Nur fuers geblurrte Hintergrund-Backdrop - Aufloesung ist irrelevant, da eh verwischt wird
+                blur_img = img.copy()
+                blur_img.thumbnail((48, 48))
+                blur_img.save(blur_thumb_path, "JPEG", quality=40, optimize=True)
         return True
     except Exception as e:
         logger.error(f"Thumbnail generation error {original_path}: {e}")
@@ -261,6 +280,7 @@ def init_db():
             conn.execute('CREATE TABLE IF NOT EXISTS global_stats (key TEXT PRIMARY KEY, value INTEGER)')
             conn.execute("INSERT OR IGNORE INTO global_stats (key, value) VALUES ('visitor_count', 0)")
             conn.execute('CREATE TABLE IF NOT EXISTS active_sessions (hash TEXT PRIMARY KEY, timestamp REAL)')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_sessions_timestamp ON active_sessions(timestamp)')
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS routes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -317,10 +337,8 @@ def index_photo(full_path, abs_photo_dir):
             if conn.execute("SELECT 1 FROM photos WHERE filename=?", (rel_path,)).fetchone():
                 return
 
-            flat_name = rel_path.replace('/', '_').replace('\\', '_')
-            if not flat_name.lower().endswith('.jpg'):
-                flat_name += '.jpg'
-            thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
+            thumb_path = _thumb_path(rel_path)
+            blur_thumb_path = _thumb_path(rel_path, '_blur')
 
             timestamp, coords = extract_exif_data(full_path)
 
@@ -336,7 +354,7 @@ def index_photo(full_path, abs_photo_dir):
             loc = get_location_name(lat, lon)
             final_ts = timestamp or os.path.getmtime(full_path)
 
-            generate_thumbnail(full_path, thumb_path)
+            generate_thumbnails(full_path, thumb_path, blur_thumb_path)
 
             cursor = conn.execute(
                 "INSERT OR IGNORE INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
@@ -415,6 +433,54 @@ def index():
     return render_template('login.html', contact_email=CONFIG['CONTACT_EMAIL'])
 
 
+@app.route('/api/stats')
+def api_stats():
+    token = request.args.get('token', '')
+    if not secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']): abort(403)
+
+    try:
+        with get_db() as conn:
+            agg = conn.execute(
+                "SELECT COUNT(*) as cnt, MIN(timestamp) as ts_first, MAX(timestamp) as ts_last "
+                "FROM photos WHERE lat IS NOT NULL AND lon IS NOT NULL"
+            ).fetchone()
+            loc_rows = conn.execute(
+                "SELECT DISTINCT location FROM photos "
+                "WHERE location IS NOT NULL AND location != '' AND lat IS NOT NULL"
+            ).fetchall()
+            coord_rows = conn.execute(
+                "SELECT lat, lon FROM photos WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY timestamp ASC"
+            ).fetchall()
+    except Exception as e:
+        logger.error(f"API Stats error: {e}")
+        return jsonify({"error": "DB Error"}), 500
+
+    photo_count = agg['cnt'] or 0
+    ts_first, ts_last = agg['ts_first'], agg['ts_last']
+    days = int((ts_last - ts_first) / 86400) + 1 if ts_first and ts_last else 0
+
+    unique_countries = set()
+    for row in loc_rows:
+        loc = row['location']
+        if loc and ',' in loc:
+            unique_countries.add(loc.split(',')[-1].strip())
+
+    total_km = 0.0
+    coords = list(coord_rows)
+    for i in range(1, len(coords)):
+        total_km += calculate_distance(
+            coords[i - 1]['lat'], coords[i - 1]['lon'],
+            coords[i]['lat'], coords[i]['lon']
+        )
+
+    return jsonify({
+        "total_km": round(total_km, 1),
+        "countries": len(unique_countries),
+        "photo_count": photo_count,
+        "days": days,
+    })
+
+
 @app.route('/api/route')
 def api_route():
     token = request.args.get('token', '')
@@ -441,18 +507,11 @@ def api_route():
         for r in route_rows
     }
 
-    total_km = 0
-    unique_countries = set()
-    days = 0
     routes = []
     missing_pairs = []
 
     if photos:
         for i, photo in enumerate(photos):
-            loc = photo['location']
-            if loc and ',' in loc:
-                unique_countries.add(loc.split(',')[-1].strip())
-
             if i > 0:
                 p1 = photos[i - 1]
                 lat1, lon1 = p1.get('lat'), p1.get('lon')
@@ -460,7 +519,6 @@ def api_route():
 
                 if (lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None
                         and lat1 != 0 and lat2 != 0):
-                    total_km += calculate_distance(lat1, lon1, lat2, lon2)
                     key = (p1['filename'], photo['filename'])
                     cached = route_cache.get(key)
                     if cached:
@@ -471,22 +529,12 @@ def api_route():
                 else:
                     routes.append(None)
 
-        ts_first = photos[0]['timestamp']
-        ts_last = photos[-1]['timestamp']
-        days = int((ts_last - ts_first) / 86400) + 1 if ts_first is not None and ts_last is not None else 0
-
     if missing_pairs:
         threading.Thread(target=fetch_missing_routes, args=(missing_pairs,), daemon=True).start()
 
     return jsonify({
-        "stats": {
-            "total_km": round(total_km, 1),
-            "countries": len(unique_countries),
-            "photo_count": len(photos),
-            "days": days
-        },
         "photos": photos,
-        "routes": routes
+        "routes": routes,
     })
 
 
@@ -494,6 +542,25 @@ def _cached_file(path, max_age=31536000):
     response = make_response(send_file(path))
     response.headers['Cache-Control'] = f'public, max-age={max_age}, immutable'
     return response
+
+
+def _ensure_blur_thumbnail(thumb_path, blur_thumb_path):
+    """Backfill fuer Fotos, die vor Einfuehrung des Blur-Thumbs indiziert wurden.
+    Skaliert aus dem bereits vorhandenen 800px-Thumb statt das Original neu zu lesen."""
+    if os.path.exists(blur_thumb_path):
+        return True
+    if not os.path.exists(thumb_path):
+        return False
+    try:
+        with Image.open(thumb_path) as img:
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            img.thumbnail((48, 48))
+            img.save(blur_thumb_path, "JPEG", quality=40, optimize=True)
+        return True
+    except Exception as e:
+        logger.warning(f"Blur thumbnail backfill error {thumb_path}: {e}")
+        return False
 
 
 @app.route('/api/thumb/<path:filename>')
@@ -505,12 +572,17 @@ def api_thumb(filename):
     requested_path = os.path.abspath(os.path.join(base_dir, filename))
     if not os.path.commonpath([base_dir, requested_path]) == base_dir: abort(403)
 
-    if request.args.get('size') == 'original':
+    size = request.args.get('size')
+
+    if size == 'original':
         if os.path.exists(requested_path): return _cached_file(requested_path)
 
-    flat_name = filename.replace('/', '_').replace('\\', '_')
-    if not flat_name.lower().endswith('.jpg'): flat_name += '.jpg'
-    thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_name)
+    thumb_path = _thumb_path(filename)
+
+    if size == 'blur':
+        blur_thumb_path = _thumb_path(filename, '_blur')
+        if _ensure_blur_thumbnail(thumb_path, blur_thumb_path):
+            return _cached_file(blur_thumb_path)
 
     if os.path.exists(thumb_path): return _cached_file(thumb_path)
     if os.path.exists(requested_path): return _cached_file(requested_path)
@@ -547,8 +619,8 @@ def upload_photo():
 
         ts, coords = extract_exif_data(save_path)
 
-        flat_thumb_name = unique_name if unique_name.lower().endswith('.jpg') else unique_name + '.jpg'
-        thumb_path = os.path.join(CONFIG['THUMB_DIR'], flat_thumb_name)
+        thumb_path = _thumb_path(unique_name)
+        blur_thumb_path = _thumb_path(unique_name, '_blur')
 
         # If no EXIF GPS but client supplied coordinates, write them into the file
         if not coords and form_coords:
@@ -581,7 +653,7 @@ def upload_photo():
         if loc == "Unbekannt":
             loc = f"{lat:.2f}, {lon:.2f}"
 
-        generate_thumbnail(save_path, thumb_path)
+        generate_thumbnails(save_path, thumb_path, blur_thumb_path)
         final_ts = ts or time.time()
 
         with get_db() as conn:

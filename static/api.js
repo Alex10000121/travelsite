@@ -2,9 +2,22 @@
 // Jede Funktion wirft bei Fehler einen Error — kein fetch() außerhalb dieser Datei.
 
 /**
- * Lädt alle Routendaten (Fotos + Statistiken) vom Server.
+ * Lädt Reisestatistiken (km, Länder, Tage, Fotos) – leichtgewichtig, schnell.
+ * @param {string} token
+ * @returns {Promise<{total_km: number, countries: number, photo_count: number, days: number}>}
+ */
+export async function fetchStats(token) {
+    const res = await fetch(`/api/stats?token=${token}`);
+    if (!res.ok) {
+        throw new Error(`Fehler beim Laden der Statistiken (HTTP ${res.status})`);
+    }
+    return res.json();
+}
+
+/**
+ * Lädt alle Routendaten (Fotos + Routen) vom Server.
  * @param {string} token - Öffentlicher Lese-Token aus data-token
- * @returns {Promise<{photos: Array, stats: Object}>}
+ * @returns {Promise<{photos: Array, routes: Array}>}
  */
 export async function fetchRoute(token) {
     const res = await fetch(`/api/route?token=${token}`);

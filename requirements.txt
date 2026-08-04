@@ -1,4 +1,5 @@
 Flask
+Flask-Compress
 Flask-Limiter
 Pillow
 reverse_geocoder

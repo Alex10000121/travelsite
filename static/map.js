@@ -101,6 +101,7 @@ export class MapController {
             }
             this._clickConsumed = false;
         });
+
     }
 
     _setupTerrain() {

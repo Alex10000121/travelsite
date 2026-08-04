@@ -1,6 +1,6 @@
 // Einstiegspunkt: instanziiert alle Module und verdrahtet ihre Callbacks.
 
-import { fetchRoute }      from './api.js';
+import { fetchRoute, fetchStats } from './api.js';
 import { MapController }   from './map.js';
 import { GalleryController } from './gallery.js';
 import { AdminController } from './admin.js';
@@ -123,10 +123,15 @@ admin.onShowFilename = (filename) => {
     // Direkt Bild anzeigen ohne Navigation (internes Methoden-Äquivalent)
     // Wir missbrauchen hier absichtlich nicht gallery.setIndex, da der Fix-Assistent
     // Bilder ohne GPS zeigt, die keinen Marker auf der Karte haben.
+    const url     = `/api/thumb/${filename}?token=${TOKEN}`;
+    const blurUrl = `${url}&size=blur`;
+    new Image().src = url;
+    new Image().src = blurUrl;
+
     if (dom.currentPhoto) {
         dom.currentPhoto.style.opacity = '0';
         setTimeout(() => {
-            dom.currentPhoto.src = `/api/thumb/${filename}?token=${TOKEN}`;
+            dom.currentPhoto.src = url;
             dom.currentPhoto.style.display = 'block';
             dom.currentPhoto.onload = () => { dom.currentPhoto.style.opacity = '1'; };
         }, 150);
@@ -134,7 +139,7 @@ admin.onShowFilename = (filename) => {
     if (dom.bgPhoto) {
         dom.bgPhoto.style.opacity = '0';
         setTimeout(() => {
-            dom.bgPhoto.src = `/api/thumb/${filename}?token=${TOKEN}`;
+            dom.bgPhoto.src = blurUrl;
             dom.bgPhoto.style.display = 'block';
             dom.bgPhoto.onload = () => { dom.bgPhoto.style.opacity = '1'; };
         }, 150);
@@ -166,31 +171,29 @@ window.changeLocation = (dir) => gallery.changeLocation(dir);
 // =============================================================================
 
 async function init() {
-    try {
-        const { photos, stats, routes } = await fetchRoute(TOKEN);
+    // Stats sofort laden (kleiner Request, erscheint schnell)
+    fetchStats(TOKEN).then(stats => {
+        animateValue('stat-km',       0, stats.total_km, 1500);
+        setStatText('stat-countries', stats.countries);
+        setStatText('stat-days',       stats.days);
+        setStatText('stat-photos',     stats.photo_count);
+    }).catch(() => {});
 
-        // --- Statistiken anzeigen ---
-        if (stats) {
-            animateValue('stat-km',       0, stats.total_km, 1500);
-            setStatText('stat-countries', stats.countries);
-            setStatText('stat-days',       stats.days);
-            setStatText('stat-photos',     stats.photo_count);
-        }
+    try {
+        const { photos, routes } = await fetchRoute(TOKEN);
 
         if (!photos || photos.length === 0) {
             console.warn('Keine Fotos vom Server erhalten.');
             return;
         }
 
-        // --- Foto-Objekte normalisieren ---
         const allPhotos = photos.map(p => ({
             ...p,
             countryCode: extractCountryCode(p.location),
         }));
 
-        // --- Module mit Daten versorgen ---
         map.renderPhotos(allPhotos, routes || []);
-        gallery.loadPhotos(allPhotos, 0);   // löst onPhotoChange → map.setActiveMarker aus
+        gallery.loadPhotos(allPhotos, 0);
 
     } catch (err) {
         console.error('Fehler beim Laden der Reisedaten:', err);

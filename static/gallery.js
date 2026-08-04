@@ -179,6 +179,8 @@ export class GalleryController {
      */
     _displayImage(filename) {
         const { currentPhoto: imgEl, bgPhoto: bgEl } = this._dom;
+        const url     = `/api/thumb/${filename}?token=${this._token}`;
+        const blurUrl = `${url}&size=blur`;
 
         if (imgEl) {
             imgEl.classList.remove('is-fullscreen');
@@ -186,16 +188,20 @@ export class GalleryController {
         }
         if (bgEl) bgEl.style.opacity = 0;
 
+        // Download läuft schon während des Fade-Outs statt erst danach zu starten,
+        // damit der spätere src-Swap aus dem Browser-Cache kommt statt neu zu laden.
+        new Image().src = url;
+        new Image().src = blurUrl;
+
         clearTimeout(this._displayTimer);
         this._displayTimer = setTimeout(() => {
-            const url = `/api/thumb/${filename}?token=${this._token}`;
             if (imgEl) {
                 imgEl.src          = url;
                 imgEl.style.display = 'block';
                 imgEl.onload       = () => { imgEl.style.opacity = 1; };
             }
             if (bgEl) {
-                bgEl.src          = url;
+                bgEl.src          = blurUrl;
                 bgEl.style.display = 'block';
                 bgEl.onload       = () => { bgEl.style.opacity = 1; };
             }
