@@ -36,6 +36,7 @@ const map = new MapController(dom.map, {
     zoom:   6,
     flyDuration: 1.5,
     token: TOKEN,
+    showPinsToggle: true,
 });
 
 const gallery = new GalleryController({

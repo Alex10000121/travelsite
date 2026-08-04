@@ -199,8 +199,13 @@ body, html {
     z-index: var(--z-map);
 }
 
-/* Foto-Pins auf der Karte (rundes Thumbnail statt Punkt, à la Polarsteps).
-   Cluster bleiben normale Nummern-Kreise (siehe map.js .clusters-Layer). */
+/* Foto-Pins ein-/ausblenden-Button (MapLibre-Custom-Control unten links, siehe
+   PinsToggleControl in map.js). Farbe explizit dunkel, da der weisse
+   MapLibre-Control-Hintergrund sonst mit dem hellen App-Text kollidieren würde. */
+.pins-toggle-btn { color: #333; }
+.pins-toggle-btn svg { display: block; margin: auto; }
+
+/* Foto-Pins auf der Karte (rundes Thumbnail statt Punkt, à la Polarsteps). */
 .photo-marker {
     width: 34px; height: 34px;
     border-radius: 50%;

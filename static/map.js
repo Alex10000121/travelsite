@@ -28,6 +28,49 @@ async function resolveStyle() {
     }
 }
 
+const EYE_ICON =
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+
+const EYE_OFF_ICON =
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a20.3 20.3 0 0 1 5.06-6.06M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a20.3 20.3 0 0 1-3.22 4.44M1 1l22 22"/>' +
+    '<path d="M9.53 9.53a3 3 0 0 0 4.24 4.24"/></svg>';
+
+/** MapLibre-IControl: Button unten links, um die Foto-Pins ein-/auszublenden (nur Route sichtbar). */
+class PinsToggleControl {
+    constructor(onToggle) {
+        this._onToggle = onToggle;
+    }
+
+    onAdd() {
+        this._container = document.createElement('div');
+        this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+
+        this._button = document.createElement('button');
+        this._button.type = 'button';
+        this._button.className = 'pins-toggle-btn';
+        this._button.addEventListener('click', () => this._render(this._onToggle()));
+        this._container.appendChild(this._button);
+
+        this._render(true);
+        return this._container;
+    }
+
+    onRemove() {
+        this._container.remove();
+    }
+
+    _render(visible) {
+        this._button.innerHTML = visible ? EYE_ICON : EYE_OFF_ICON;
+        this._button.title = visible ? 'Fotopunkte ausblenden' : 'Fotopunkte einblenden';
+        this._button.setAttribute('aria-label', this._button.title);
+        this._button.setAttribute('aria-pressed', String(!visible));
+    }
+}
+
 export class MapController {
 
     constructor(mapElement, options = {}) {
@@ -49,6 +92,8 @@ export class MapController {
         this._token = options.token ?? null;
         this._photoMarkers = new Map();
         this._clusterMarkers = new Map();
+        this._pinsVisible = true;
+        this._showPinsToggle = options.showPinsToggle ?? false;
 
         resolveStyle().then(style => this._initMap(mapElement, style));
     }
@@ -73,6 +118,9 @@ export class MapController {
 
         window.addEventListener('resize', this._resizeHandler);
         this._map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+        if (this._showPinsToggle) {
+            this._map.addControl(new PinsToggleControl(() => this.togglePhotoPins()), 'bottom-left');
+        }
 
         this._map.on('load', () => {
             this._map.resize();
@@ -319,7 +367,7 @@ export class MapController {
      * Cluster-Punkte selbst werden von _syncClusterMarkers behandelt.
      */
     _syncPhotoMarkers() {
-        if (!this._mapReady || !this._map.isSourceLoaded('photos')) return;
+        if (!this._mapReady || !this._pinsVisible || !this._map.isSourceLoaded('photos')) return;
 
         const features = this._map.queryRenderedFeatures(undefined, { layers: ['unclustered-point'] });
         const visibleIndices = new Set(features.map(f => f.properties.index));
@@ -372,7 +420,7 @@ export class MapController {
      * befuellt, damit Zoomen/Schwenken nicht auf jeden Cluster-Request warten muss.
      */
     _syncClusterMarkers() {
-        if (!this._mapReady || !this._map.isSourceLoaded('photos')) return;
+        if (!this._mapReady || !this._pinsVisible || !this._map.isSourceLoaded('photos')) return;
 
         const features = this._map.queryRenderedFeatures(undefined, { layers: ['clusters'] });
         const visibleIds = new Set(features.map(f => f.properties.cluster_id));
@@ -462,6 +510,24 @@ export class MapController {
 
     set onMarkerClick(fn) { this._onMarkerClick = fn; }
     set onMapClick(fn)    { this._onMapClick    = fn; }
+
+    /**
+     * Blendet alle Foto-/Cluster-Pins ein oder aus (Route-Linie bleibt sichtbar).
+     * @returns {boolean} Der neue Sichtbarkeits-Zustand.
+     */
+    togglePhotoPins() {
+        this._pinsVisible = !this._pinsVisible;
+        if (!this._pinsVisible) {
+            for (const marker of this._photoMarkers.values()) marker.remove();
+            this._photoMarkers.clear();
+            for (const marker of this._clusterMarkers.values()) marker.remove();
+            this._clusterMarkers.clear();
+        } else {
+            this._syncPhotoMarkers();
+            this._syncClusterMarkers();
+        }
+        return this._pinsVisible;
+    }
 
     renderPhotos(photos, routes) {
         this._photos = photos;
