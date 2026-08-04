@@ -238,15 +238,18 @@ export class GalleryController {
         const zone = this._dom.galleryPanel;
         if (!zone) return;
 
-        let tX = 0, tY = 0;
+        let tX = 0, tY = 0, startedInFilmstrip = false;
 
         zone.addEventListener('touchstart', (e) => {
             tX = e.changedTouches[0].screenX;
             tY = e.changedTouches[0].screenY;
+            // Swipes, die im Filmstrip beginnen, sollen nur dessen natives
+            // Scrollen ausloesen, nicht das Foto wechseln.
+            startedInFilmstrip = !!e.target.closest?.('.filmstrip');
         }, { passive: false });
 
         zone.addEventListener('touchend', (e) => {
-            if (this._isFixingMode) return;
+            if (this._isFixingMode || startedInFilmstrip) return;
             const xDiff = e.changedTouches[0].screenX - tX;
             const yDiff = e.changedTouches[0].screenY - tY;
 
