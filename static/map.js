@@ -1,3 +1,5 @@
+import { encodeFilenamePath } from './filename-utils.js';
+
 const MAPTILER_KEY = document.body.dataset.maptilerKey || '';
 const MAPTILER_STYLE_URL = MAPTILER_KEY
     ? `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${MAPTILER_KEY}`
@@ -41,6 +43,12 @@ export class MapController {
         this._initialCenter = [options.center?.[1] ?? 10, options.center?.[0] ?? 50];
         this._initialZoom   = options.zoom ?? 6;
         this._resizeHandler = () => this._map?.resize();
+
+        // Foto-Pins (rundes Thumbnail statt Punkt, wie bei Polarsteps) - nur fuer
+        // aktuell unclusterte Punkte. Key = Foto-Index, siehe _syncPhotoMarkers.
+        this._token = options.token ?? null;
+        this._photoMarkers = new Map();
+        this._clusterMarkers = new Map();
 
         resolveStyle().then(style => this._initMap(mapElement, style));
     }
@@ -94,6 +102,15 @@ export class MapController {
         });
 
         this._map.on('error', () => {});
+
+        // Standard-Muster fuer HTML-Marker auf geclusterten GeoJSON-Punkten: es gibt
+        // keinen Event, der genau dann feuert, wenn sich die unclusterten Punkte
+        // aendern (Zoom/Pan/Cluster-Auf-oder-Zuklappen), daher bei jedem Render-Tick
+        // abgleichen (guard via isSourceLoaded haelt das im Leerlauf billig).
+        this._map.on('render', () => {
+            this._syncPhotoMarkers();
+            this._syncClusterMarkers();
+        });
 
         this._map.on('click', (e) => {
             if (!this._clickConsumed) {
@@ -207,72 +224,49 @@ export class MapController {
             });
         }
         if (!this._map.getLayer('clusters')) {
+            // Unsichtbar, wie 'unclustered-point' - dient nur als Quelle fuer
+            // queryRenderedFeatures in _syncClusterMarkers. Die eigentliche Darstellung
+            // ist ein HTML-Marker mit Foto + Zaehl-Badge (siehe dort).
             this._map.addLayer({
                 id: 'clusters',
                 type: 'circle',
                 source: 'photos',
                 filter: ['has', 'point_count'],
                 paint: {
-                    'circle-color': '#f97316',
                     'circle-radius': ['step', ['get', 'point_count'], 15, 10, 20, 50, 25],
-                    'circle-opacity': 0.85,
-                    'circle-stroke-width': 2,
-                    'circle-stroke-color': '#fff'
+                    'circle-opacity': 0
                 }
             });
         }
-        if (!this._map.getLayer('cluster-count')) {
-            this._map.addLayer({
-                id: 'cluster-count',
-                type: 'symbol',
-                source: 'photos',
-                filter: ['has', 'point_count'],
-                layout: {
-                    'text-field': '{point_count_abbreviated}',
-                    'text-size': 12,
-                    'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold']
-                },
-                paint: { 'text-color': '#ffffff' }
-            });
-        }
         if (!this._map.getLayer('unclustered-point')) {
+            // Unsichtbar - dient nur noch als Quelle fuer queryRenderedFeatures in
+            // _syncPhotoMarkers, die eigentliche Foto-Pin-Darstellung sind HTML-Marker
+            // mit rundem Thumbnail (siehe dort). Ohne diese Ebene gaebe es keine
+            // Moeglichkeit, "welche Punkte sind beim aktuellen Zoom nicht geclustert"
+            // abzufragen.
             this._map.addLayer({
                 id: 'unclustered-point',
                 type: 'circle',
                 source: 'photos',
                 filter: ['!', ['has', 'point_count']],
                 paint: {
-                    'circle-color': '#f97316',
-                    'circle-radius': ['case', ['==', ['get', 'active'], true], 10, 6],
-                    'circle-opacity': ['case', ['==', ['get', 'active'], true], 1, 0.6],
-                    'circle-stroke-width': ['case', ['==', ['get', 'active'], true], 4, 1],
-                    'circle-stroke-color': '#ffffff'
+                    'circle-radius': 6,
+                    'circle-opacity': 0
                 }
             });
         }
     }
 
     _setupEvents() {
-        this._map.on('click', 'unclustered-point', (e) => {
-            this._clickConsumed = true;
-            this._spinOnNextMoveEnd = true;
-            this._onMarkerClick?.(e.features[0].properties.index);
-        });
+        // Cluster-Klicks werden ueber den DOM-Marker selbst gehandhabt (siehe
+        // _syncClusterMarkers), nicht mehr ueber die (jetzt unsichtbare) GL-Ebene.
+    }
 
-        this._map.on('click', 'clusters', async (e) => {
-            this._clickConsumed = true;
-            const clusterId = Number(e.features[0].properties.cluster_id);
-            const center = e.features[0].geometry.coordinates.slice();
-            try {
-                const zoom = await this._map.getSource('photos').getClusterExpansionZoom(clusterId);
-                this._map.easeTo({ center, zoom });
-            } catch (_) {}
-        });
-
-        this._map.on('mouseenter', 'unclustered-point', () => { this._map.getCanvas().style.cursor = 'pointer'; });
-        this._map.on('mouseleave', 'unclustered-point', () => { this._map.getCanvas().style.cursor = ''; });
-        this._map.on('mouseenter', 'clusters',           () => { this._map.getCanvas().style.cursor = 'pointer'; });
-        this._map.on('mouseleave', 'clusters',           () => { this._map.getCanvas().style.cursor = ''; });
+    async _expandCluster(clusterId, center) {
+        try {
+            const zoom = await this._map.getSource('photos').getClusterExpansionZoom(clusterId);
+            this._map.easeTo({ center, zoom });
+        } catch (_) {}
     }
 
     _buildPhotosGeoJSON() {
@@ -319,6 +313,121 @@ export class MapController {
         this._map.getSource('route')?.setData(this._buildRouteGeoJSON());
     }
 
+    /**
+     * Haelt die HTML-Foto-Marker synchron zu den Punkten, die die unsichtbare
+     * 'unclustered-point'-Ebene beim aktuellen Zoom/Ausschnitt tatsaechlich rendert.
+     * Cluster-Punkte selbst werden von _syncClusterMarkers behandelt.
+     */
+    _syncPhotoMarkers() {
+        if (!this._mapReady || !this._map.isSourceLoaded('photos')) return;
+
+        const features = this._map.queryRenderedFeatures(undefined, { layers: ['unclustered-point'] });
+        const visibleIndices = new Set(features.map(f => f.properties.index));
+
+        for (const [index, marker] of this._photoMarkers) {
+            if (!visibleIndices.has(index)) {
+                marker.remove();
+                this._photoMarkers.delete(index);
+            }
+        }
+
+        for (const feature of features) {
+            const index = feature.properties.index;
+            if (this._photoMarkers.has(index)) continue;
+
+            const photo = this._photos[index];
+            if (!photo) continue;
+
+            const el = document.createElement('div');
+            el.className = 'photo-marker';
+            if (index === this._activeIndex) el.classList.add('active');
+
+            const img = document.createElement('img');
+            img.src = `/api/thumb/${encodeFilenamePath(photo.filename)}?token=${this._token ?? ''}&size=blur`;
+            img.loading = 'lazy';
+            img.alt = '';
+            // Faellt ein Thumbnail aus (z.B. geloeschtes Foto), soll die
+            // Hintergrundfarbe des Pins durchscheinen statt eines kaputten Bild-Icons.
+            img.addEventListener('error', () => { img.style.display = 'none'; });
+            el.appendChild(img);
+
+            el.addEventListener('click', () => {
+                this._spinOnNextMoveEnd = true;
+                this._onMarkerClick?.(index);
+            });
+
+            const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+                .setLngLat(feature.geometry.coordinates)
+                .addTo(this._map);
+
+            this._photoMarkers.set(index, marker);
+        }
+    }
+
+    /**
+     * Analog zu _syncPhotoMarkers, aber fuer Cluster-Punkte: zeigt ein Vorschaubild
+     * eines der zusammengefassten Fotos plus ein Zaehl-Badge statt eines nackten
+     * Nummern-Kreises. Das Vorschaubild kommt asynchron ueber getClusterLeaves,
+     * der Pin erscheint aber sofort (mit Fallback-Hintergrund) und wird nachtraeglich
+     * befuellt, damit Zoomen/Schwenken nicht auf jeden Cluster-Request warten muss.
+     */
+    _syncClusterMarkers() {
+        if (!this._mapReady || !this._map.isSourceLoaded('photos')) return;
+
+        const features = this._map.queryRenderedFeatures(undefined, { layers: ['clusters'] });
+        const visibleIds = new Set(features.map(f => f.properties.cluster_id));
+
+        for (const [clusterId, marker] of this._clusterMarkers) {
+            if (!visibleIds.has(clusterId)) {
+                marker.remove();
+                this._clusterMarkers.delete(clusterId);
+            }
+        }
+
+        for (const feature of features) {
+            const clusterId = feature.properties.cluster_id;
+            if (this._clusterMarkers.has(clusterId)) continue;
+
+            const count = feature.properties.point_count_abbreviated ?? feature.properties.point_count;
+
+            const el = document.createElement('div');
+            el.className = 'photo-marker cluster-marker';
+
+            const img = document.createElement('img');
+            img.loading = 'lazy';
+            img.alt = '';
+            img.addEventListener('error', () => { img.style.display = 'none'; });
+            el.appendChild(img);
+
+            const badge = document.createElement('span');
+            badge.className = 'cluster-badge';
+            badge.textContent = String(count);
+            el.appendChild(badge);
+
+            const coordinates = feature.geometry.coordinates.slice();
+            el.addEventListener('click', () => this._expandCluster(clusterId, coordinates));
+
+            const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+                .setLngLat(coordinates)
+                .addTo(this._map);
+
+            this._clusterMarkers.set(clusterId, marker);
+
+            this._map.getSource('photos').getClusterLeaves(clusterId, 1, 0).then(leaves => {
+                if (!leaves?.length) return;
+                // Zwischenzeitlich neu gezoomt/verschoben? Dann gehoert diese ID
+                // inzwischen ggf. zu einem komplett anderen Cluster - nicht mehr
+                // in den (ausgetauschten) Marker schreiben.
+                if (this._clusterMarkers.get(clusterId) !== marker) return;
+
+                const leafPhoto = this._photos[leaves[0].properties.index];
+                if (leafPhoto) {
+                    img.src = `/api/thumb/${encodeFilenamePath(leafPhoto.filename)}?token=${this._token ?? ''}&size=blur`;
+                }
+            }).catch(() => {});
+        }
+    }
+
     _startSpin() {
         const degreesPerFrame = 0.3;
         let rotated = 0;
@@ -363,6 +472,9 @@ export class MapController {
     setActiveMarker(activeIndex, photo) {
         this._activeIndex = activeIndex;
         if (this._mapReady) this._updateSources();
+        for (const [index, marker] of this._photoMarkers) {
+            marker.getElement().classList.toggle('active', index === activeIndex);
+        }
         if (!photo?.lat || !photo?.lon || !this._map) return;
 
         this._cancelSpin();

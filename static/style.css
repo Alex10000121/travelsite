@@ -2,7 +2,6 @@
    1. VARIABLES & SETUP
    ========================================= */
 :root {
-    /* Farben */
     --bg-color: #1a1a1a;
     --panel-color: #252525;
     --accent-color: #3b82f6;
@@ -10,7 +9,6 @@
     --text-main: #ffffff;
     --text-muted: #a3a3a3;
 
-    /* Design Tokens */
     --radius: 20px;
     --shadow: 0 10px 30px rgba(0,0,0,0.5);
     --transition-speed: 0.3s;
@@ -35,7 +33,7 @@ body, html {
     font-family: 'Inter', sans-serif;
     background: var(--bg-color);
     color: var(--text-main);
-    overflow: hidden; /* Verhindert Scrollen der App */
+    overflow: hidden;
 }
 
 /* =========================================
@@ -43,7 +41,7 @@ body, html {
    ========================================= */
 .app-container {
     display: grid;
-    grid-template-columns: 1.8fr 1fr; /* Links breit, Rechts schmaler */
+    grid-template-columns: 1.8fr 1fr;
     height: 100dvh;
     width: 100vw;
     background: var(--bg-color);
@@ -62,6 +60,9 @@ body, html {
     gap: 14px;
     z-index: var(--z-gallery);
     min-width: 0; /* verhindert, dass das Grid-Layout dem intrinsischen Fotoformat weicht */
+    min-height: 0; /* dito fuer die Hoehe: ohne das zwingt ein Hochkant-Foto (dessen 800px-Thumb
+                       intrinsisch bis zu 800px hoch statt breit ist) dieses Grid-Item ueber die
+                       Viewport-Hoehe hinaus auf und drueckt das Filmstrip unten aus dem Bild */
 }
 
 .photo-wrapper {
@@ -78,7 +79,6 @@ body, html {
     min-width: 0;
 }
 
-/* Ambient Blur Hintergrund */
 #bg-photo {
     position: absolute; top: 0; left: 0;
     width: 100%; height: 100%;
@@ -88,17 +88,16 @@ body, html {
     transform: scale(1.1); /* Ränder abschneiden */
 }
 
-/* Hauptbild */
 #current-photo {
     position: relative;
     max-width: 100%; max-height: 100%;
     min-width: 0; min-height: 0; /* sonst erzwingt die Bild-Pixelgröße als Flex-Mindestgröße den Container auf */
     object-fit: contain;
-    z-index: 2; /* Relativ zum wrapper */
+    z-index: 2;
     transition: opacity var(--transition-speed) ease;
     user-select: none;
     cursor: zoom-in;
-    pointer-events: auto; /* Stellt sicher, dass Klicks registriert werden */
+    pointer-events: auto;
     box-shadow: 0 0 20px rgba(0,0,0,0.3);
     transform-origin: center center;
     animation: kenburns 10s ease-out forwards;
@@ -139,7 +138,7 @@ body, html {
     text-align: center; min-width: 200px;
     border: 1px solid rgba(255,255,255,0.1);
     z-index: var(--z-ui-overlay);
-    pointer-events: none; /* Klicks gehen durch */
+    pointer-events: none;
 }
 .info-overlay h2 { margin: 0; font-size: 1rem; }
 .info-overlay p { margin: 2px 0 0 0; font-size: 0.8rem; color: var(--text-muted); }
@@ -198,6 +197,47 @@ body, html {
     overflow: hidden;
     box-shadow: var(--shadow);
     z-index: var(--z-map);
+}
+
+/* Foto-Pins auf der Karte (rundes Thumbnail statt Punkt, à la Polarsteps).
+   Cluster bleiben normale Nummern-Kreise (siehe map.js .clusters-Layer). */
+.photo-marker {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background-color: var(--accent-color); /* Fallback, falls das Thumbnail nicht laedt */
+    border: 3px solid #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+    cursor: pointer;
+    transition: width 0.2s ease, height 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+/* Rundung sitzt direkt am Bild (statt overflow:hidden am Marker), damit ein
+   absolut positioniertes Kind wie .cluster-badge ueber den Rand hinausragen
+   kann, ohne selbst mit abgeschnitten zu werden. */
+.photo-marker img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
+.photo-marker:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.55); }
+.photo-marker.active {
+    width: 52px; height: 52px;
+    border-color: var(--accent-color);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.6);
+    z-index: 10;
+}
+
+/* Cluster-Pin: gleiche runde Foto-Basis wie .photo-marker, plus Zaehl-Badge oben rechts */
+.cluster-marker { position: relative; }
+.cluster-badge {
+    position: absolute;
+    top: -6px; right: -6px;
+    min-width: 20px; height: 20px;
+    padding: 0 4px;
+    border-radius: 10px;
+    background: #f97316;
+    border: 2px solid #fff;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
 }
 
 /* =========================================
@@ -410,7 +450,7 @@ body.admin-page { overflow-y: auto; }
     /* Buttons kompakter */
     .info-btn { top: 4%; width: 40px; height: 40px; background: rgba(0,0,0,0.5); }
     .help-pos { left: 5%; }
-    .upload-pos { left: 18%; } /* Angepasst für Mobile */
+    .upload-pos { left: 18%; }
     .stats-pos { right: 5%; }
 
     .info-overlay { width: 80%; bottom: 5%; padding: 8px; }
@@ -438,10 +478,10 @@ body.admin-page { overflow-y: auto; }
 
     .progress-bar-fill {
         height: 100%;
-        width: 0%; /* Startet bei 0 */
+        width: 0%;
         background-color: var(--accent-color);
         border-radius: 10px;
-        transition: width 0.3s ease-out; /* Weiche Animation */
+        transition: width 0.3s ease-out;
         box-shadow: 0 0 10px var(--accent-color);
     }
 

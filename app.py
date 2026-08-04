@@ -28,7 +28,6 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import piexif
 
-# Logging Konfiguration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -82,7 +81,6 @@ def _require_env(name):
     return value
 
 
-# Konfiguration
 CONFIG = {
     'PHOTO_DIR': os.environ.get('PHOTO_DIR', './photos'),
     'THUMB_DIR': os.environ.get('THUMB_DIR', './data/thumbs'),
@@ -119,8 +117,6 @@ if _db_dir:
     os.makedirs(_db_dir, exist_ok=True)
 
 
-# --- HELFER FUNKTIONEN ---
-
 def calculate_distance(lat1, lon1, lat2, lon2):
     try:
         R = 6371.0
@@ -153,7 +149,6 @@ def extract_exif_data(image_path):
     timestamp = None
     coords = None
 
-    # Versuch 1: PIL
     try:
         with Image.open(image_path) as img:
             exif = img.getexif()
@@ -176,7 +171,6 @@ def extract_exif_data(image_path):
     except Exception as e:
         logger.warning(f"PIL EXIF read error: {image_path}: {e}")
 
-    # Versuch 2: piexif als Fallback
     if not timestamp or not coords:
         try:
             exif_dict = piexif.load(image_path)
@@ -326,8 +320,6 @@ def generate_thumbnails(original_path, thumb_path, blur_thumb_path, large_thumb_
         return False
 
 
-# --- DB ---
-
 @contextmanager
 def get_db():
     conn = sqlite3.connect(CONFIG['DB_PATH'], timeout=20)
@@ -405,8 +397,6 @@ def track_visitor_count():
 
     return total
 
-
-# --- WORKER ---
 
 def index_photo(full_path, abs_photo_dir):
     norm = full_path.replace('\\', '/')
@@ -518,8 +508,6 @@ def initial_scan(abs_photo_dir):
             index_photo(os.path.join(root, file), abs_photo_dir)
     logger.info("Initial scan complete.")
 
-
-# --- ROUTES ---
 
 def admin_required(f):
     @wraps(f)
@@ -794,7 +782,6 @@ def upload_photo():
         thumb_path = _thumb_path(unique_name)
         blur_thumb_path = _thumb_path(unique_name, '_blur')
 
-        # If no EXIF GPS but client supplied coordinates, write them into the file
         if not coords and form_coords:
             flat, flon = form_coords
             try:
@@ -815,7 +802,6 @@ def upload_photo():
             coords = form_coords
 
         if not coords or math.isnan(coords[0]) or math.isnan(coords[1]):
-            # Kein GPS – Datei löschen
             os.remove(save_path)
             return jsonify({'success': False, 'missing_gps': True,
                             'error': 'Foto hat keine GPS-Daten. Bitte GPS in der Kamera-App aktivieren.'}), 400

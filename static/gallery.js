@@ -31,20 +31,12 @@ export class GalleryController {
         this._bindFilmstrip();
     }
 
-    // -------------------------------------------------------------------------
-    // Callback
-    // -------------------------------------------------------------------------
-
     /**
      * Wird nach jeder Navigationsaktion aufgerufen.
      * Erlaubt dem Aufrufer (main.js), die Karte zu synchronisieren.
      * @param {function(index: number, photo: object): void} fn
      */
     set onPhotoChange(fn) { this._onPhotoChange = fn; }
-
-    // -------------------------------------------------------------------------
-    // Daten laden
-    // -------------------------------------------------------------------------
 
     /**
      * Übergibt die Foto-Liste an die Galerie und zeigt das erste Bild.
@@ -74,10 +66,6 @@ export class GalleryController {
 
     /** Gibt das aktuell angezeigte Foto-Objekt zurück. */
     get currentPhoto() { return this._photos[this._currentIndex] ?? null; }
-
-    // -------------------------------------------------------------------------
-    // Navigation
-    // -------------------------------------------------------------------------
 
     /**
      * Wechselt zum nächsten (+1) oder vorherigen (-1) Foto.
@@ -143,10 +131,6 @@ export class GalleryController {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // UI-Update
-    // -------------------------------------------------------------------------
-
     /**
      * Aktualisiert Bild, Ort und Datum für den aktuellen Index
      * und feuert den onPhotoChange-Callback.
@@ -208,10 +192,6 @@ export class GalleryController {
         if (el) el.innerText = text;
     }
 
-    // -------------------------------------------------------------------------
-    // Interne Event-Bindungen (einmalig im Konstruktor)
-    // -------------------------------------------------------------------------
-
     _bindKeyboard() {
         document.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft')  this.changePhoto(-1);
@@ -264,10 +244,6 @@ export class GalleryController {
             }
         });
     }
-
-    // -------------------------------------------------------------------------
-    // Filmstrip (schnelles Springen zu einem beliebigen Foto)
-    // -------------------------------------------------------------------------
 
     /** Baut die Miniaturleiste einmal pro geladener Fotoliste auf. */
     _renderFilmstrip() {

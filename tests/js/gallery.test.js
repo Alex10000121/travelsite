@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GalleryController } from '../../static/gallery.js';
 
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
 // Alle DOM-Referenzen auf null setzen.
 // _bindTouch und _bindFullscreen prüfen auf null und kehren dann sofort zurück.
 // _bindKeyboard fügt einen keydown-Listener auf document hinzu — funktioniert
@@ -29,10 +25,6 @@ const PHOTOS = [
     { filename: 'd.jpg', location: 'Lyon, FR',    date_str: '04.01.2024', countryCode: 'FR' },
     { filename: 'e.jpg', location: 'Madrid, ES',  date_str: '05.01.2024', countryCode: 'ES' },
 ];
-
-// ---------------------------------------------------------------------------
-// changePhoto
-// ---------------------------------------------------------------------------
 
 describe('changePhoto', () => {
     it('geht zum nächsten Foto', () => {
@@ -70,10 +62,6 @@ describe('changePhoto', () => {
     });
 });
 
-// ---------------------------------------------------------------------------
-// changeLocation vorwärts (+1)
-// ---------------------------------------------------------------------------
-
 describe('changeLocation vorwärts (+1)', () => {
     it('springt vom ersten Foto eines Landes zum ersten des nächsten', () => {
         const g = makeGallery();
@@ -104,10 +92,6 @@ describe('changeLocation vorwärts (+1)', () => {
         expect(g.currentIndex).toBe(0); // Berlin (DE) — erstes Land
     });
 });
-
-// ---------------------------------------------------------------------------
-// changeLocation rückwärts (-1)
-// ---------------------------------------------------------------------------
 
 describe('changeLocation rückwärts (-1)', () => {
     it('springt zum ersten Foto des vorherigen Landes', () => {
@@ -141,10 +125,6 @@ describe('changeLocation rückwärts (-1)', () => {
 
 });
 
-// ---------------------------------------------------------------------------
-// setIndex & loadPhotos
-// ---------------------------------------------------------------------------
-
 describe('setIndex', () => {
     it('setzt den Index direkt', () => {
         const g = makeGallery();
@@ -169,10 +149,6 @@ describe('loadPhotos', () => {
         expect(g.currentIndex).toBe(0);
     });
 });
-
-// ---------------------------------------------------------------------------
-// onPhotoChange Callback
-// ---------------------------------------------------------------------------
 
 describe('onPhotoChange Callback', () => {
     it('wird bei loadPhotos ausgelöst', () => {
