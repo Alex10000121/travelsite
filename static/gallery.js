@@ -262,7 +262,7 @@ export class GalleryController {
             } else {
                 const photo = this.currentPhoto;
                 if (photo) {
-                    imgEl.src = `/api/thumb/${photo.filename}?token=${this._token}&size=original`;
+                    imgEl.src = `/api/thumb/${photo.filename}?token=${this._token}&size=large`;
                 }
                 imgEl.classList.add('is-fullscreen');
             }

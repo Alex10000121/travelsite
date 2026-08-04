@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import pytest
 from unittest.mock import patch
 
@@ -269,6 +270,55 @@ class TestUploadResponseFields:
         assert response.status_code == 400
         data = response.get_json()
         assert data.get('missing_gps') is True
+
+
+class TestApiThumbLarge:
+    def _make_jpeg_bytes(self):
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (100, 100), color=(100, 149, 237)).save(buf, format='JPEG')
+        buf.seek(0)
+        return buf
+
+    def _upload(self, client):
+        response = client.post('/api/upload', data={
+            'admin_token': 'test_admin',
+            'photo': (self._make_jpeg_bytes(), 'fullscreen.jpg'),
+            'lat': '48.8566',
+            'lon': '2.3522',
+        }, content_type='multipart/form-data')
+        assert response.status_code == 200
+        return response.get_json()['file']
+
+    def test_large_size_returns_200(self, client):
+        uploaded_file = self._upload(client)
+        response = client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
+        assert response.status_code == 200
+
+    def test_large_size_creates_dedicated_thumb_file(self, client, app):
+        import app as flask_module
+        uploaded_file = self._upload(client)
+        client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
+
+        thumb_dir = flask_module.CONFIG['THUMB_DIR']
+        large_thumb_path = os.path.join(thumb_dir, uploaded_file[:-4] + '_lg.jpg')
+        assert os.path.exists(large_thumb_path)
+
+    def test_large_size_is_cached_not_regenerated_on_second_request(self, client, app):
+        import app as flask_module
+        uploaded_file = self._upload(client)
+        client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
+
+        thumb_dir = flask_module.CONFIG['THUMB_DIR']
+        large_thumb_path = os.path.join(thumb_dir, uploaded_file[:-4] + '_lg.jpg')
+        first_mtime = os.path.getmtime(large_thumb_path)
+
+        client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
+        assert os.path.getmtime(large_thumb_path) == first_mtime
+
+    def test_invalid_token_returns_403(self, client):
+        response = client.get('/api/thumb/whatever.jpg?token=wrong&size=large')
+        assert response.status_code == 403
 
 
 class TestUpdateLocation:

@@ -218,10 +218,15 @@ def _thumb_path(filename, suffix=''):
     return os.path.join(CONFIG['THUMB_DIR'], f"{flat_name}{suffix}.jpg")
 
 
-def generate_thumbnails(original_path, thumb_path, blur_thumb_path):
+LARGE_THUMB_MAX = (1920, 1920)
+LARGE_THUMB_QUALITY = 82
+
+
+def generate_thumbnails(original_path, thumb_path, blur_thumb_path, large_thumb_path=None):
     need_main = not os.path.exists(thumb_path)
     need_blur = not os.path.exists(blur_thumb_path)
-    if not need_main and not need_blur:
+    need_large = large_thumb_path is not None and not os.path.exists(large_thumb_path)
+    if not need_main and not need_blur and not need_large:
         return True
 
     try:
@@ -230,6 +235,13 @@ def generate_thumbnails(original_path, thumb_path, blur_thumb_path):
 
             if img.mode in ("RGBA", "P"):
                 img = img.convert("RGB")
+
+            if need_large:
+                # Fuer die Fullscreen-Ansicht - deutlich kleiner als das Kamera-Original,
+                # aber scharf genug zum Reinzoomen
+                large_img = img.copy()
+                large_img.thumbnail(LARGE_THUMB_MAX)
+                large_img.save(large_thumb_path, "JPEG", quality=LARGE_THUMB_QUALITY, optimize=True)
 
             if need_main:
                 main_img = img.copy()
@@ -563,6 +575,26 @@ def _ensure_blur_thumbnail(thumb_path, blur_thumb_path):
         return False
 
 
+def _ensure_large_thumbnail(original_path, large_thumb_path):
+    """Wird nur bei tatsaechlichem Fullscreen-Aufruf erzeugt (nicht beim Scan),
+    damit nicht fuer jedes indizierte Foto ein zusaetzlicher 1920px-Thumb entsteht."""
+    if os.path.exists(large_thumb_path):
+        return True
+    if not os.path.exists(original_path):
+        return False
+    try:
+        with Image.open(original_path) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            img.thumbnail(LARGE_THUMB_MAX)
+            img.save(large_thumb_path, "JPEG", quality=LARGE_THUMB_QUALITY, optimize=True)
+        return True
+    except Exception as e:
+        logger.warning(f"Large thumbnail backfill error {original_path}: {e}")
+        return False
+
+
 @app.route('/api/thumb/<path:filename>')
 def api_thumb(filename):
     token = request.args.get('token', '')
@@ -583,6 +615,11 @@ def api_thumb(filename):
         blur_thumb_path = _thumb_path(filename, '_blur')
         if _ensure_blur_thumbnail(thumb_path, blur_thumb_path):
             return _cached_file(blur_thumb_path)
+
+    if size == 'large':
+        large_thumb_path = _thumb_path(filename, '_lg')
+        if _ensure_large_thumbnail(requested_path, large_thumb_path):
+            return _cached_file(large_thumb_path)
 
     if os.path.exists(thumb_path): return _cached_file(thumb_path)
     if os.path.exists(requested_path): return _cached_file(requested_path)
