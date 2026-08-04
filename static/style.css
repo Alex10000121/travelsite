@@ -59,13 +59,14 @@ body, html {
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    gap: 14px;
     z-index: var(--z-gallery);
 }
 
 .photo-wrapper {
     position: relative;
     width: 96%;
-    height: 94%;
+    height: 82%; /* Rest der Höhe geht ans Filmstrip darunter */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -127,7 +128,7 @@ body, html {
 /* Info Leiste unten im Bild */
 .info-overlay {
     position: absolute;
-    bottom: 84px; /* Platz für das Filmstrip darunter */
+    bottom: 40px;
     left: 50%; transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.7);
     backdrop-filter: blur(12px);
@@ -140,10 +141,10 @@ body, html {
 .info-overlay h2 { margin: 0; font-size: 1rem; }
 .info-overlay p { margin: 2px 0 0 0; font-size: 0.8rem; color: var(--text-muted); }
 
-/* Filmstrip: schnelles Springen zu einem beliebigen Foto */
+/* Filmstrip: eigene Leiste ganz unten, schnelles Springen zu einem beliebigen Foto */
 .filmstrip {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
+    flex: 0 0 auto;
+    width: 96%;
     height: 64px;
     display: flex;
     align-items: center;
@@ -154,8 +155,9 @@ body, html {
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
     scrollbar-width: none;
-    background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
-    z-index: var(--z-ui-overlay);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
 }
 .filmstrip::-webkit-scrollbar { display: none; }
 
@@ -312,8 +314,8 @@ body, html {
     /* Layout Switch zu vertikal */
     .app-container { grid-template-columns: 1fr; grid-template-rows: 60% 40%; }
 
-    .gallery-panel { padding: 0; }
-    .photo-wrapper { width: 94%; height: 94%; border-radius: var(--radius); }
+    .gallery-panel { padding: 0; gap: 8px; }
+    .photo-wrapper { width: 94%; height: 78%; border-radius: var(--radius); }
 
     /* Buttons kompakter */
     .info-btn { top: 4%; width: 40px; height: 40px; background: rgba(0,0,0,0.5); }
@@ -321,9 +323,9 @@ body, html {
     .upload-pos { left: 18%; } /* Angepasst für Mobile */
     .stats-pos { right: 5%; }
 
-    .info-overlay { width: 80%; bottom: 68px; padding: 8px; }
+    .info-overlay { width: 80%; bottom: 5%; padding: 8px; }
 
-    .filmstrip { height: 52px; padding: 6px 8px; }
+    .filmstrip { width: 94%; height: 52px; padding: 6px 8px; }
     .filmstrip-item { width: 36px; height: 36px; }
 
     .map-panel { padding-top: 0; }
