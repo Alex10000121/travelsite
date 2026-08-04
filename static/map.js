@@ -3,7 +3,7 @@ const MAPTILER_STYLE_URL = MAPTILER_KEY
     ? `https://api.maptiler.com/maps/outdoor-v2/style.json?key=${MAPTILER_KEY}`
     : null;
 
-const OSM_STYLE = {
+export const OSM_STYLE = {
     version: 8,
     sources: {
         osm: {
@@ -421,5 +421,98 @@ export class MapController {
         if (!this._map) return { lat: 0, lon: 0 };
         const c = this._map.getCenter();
         return { lat: c.lat, lon: c.lng };
+    }
+}
+
+/**
+ * Kleine, nicht interaktive Weltkarte fuers Stats-Modal: ein Punkt pro
+ * besuchtem Land. Wird erst beim ersten Oeffnen des Modals initialisiert,
+ * damit Besucher, die die Statistik nie aufklappen, keine zusaetzlichen
+ * Kachel-Requests auslösen.
+ */
+export class CountryOverviewMap {
+    constructor(container) {
+        this._container = container;
+        this._map = null;
+        this._mapReady = false;
+        this._countries = [];
+    }
+
+    /**
+     * @param {Array<{code: string, lat: number, lon: number, count: number}>} countries
+     */
+    setCountries(countries) {
+        this._countries = countries;
+        if (this._mapReady) this._updateSource();
+    }
+
+    /** Initialisiert die Karte beim ersten Aufruf, danach nur noch resize(). */
+    show() {
+        if (!this._container) return;
+
+        if (this._map) {
+            this._map.resize();
+            return;
+        }
+
+        this._map = new maplibregl.Map({
+            container: this._container,
+            style: OSM_STYLE,
+            center: [10, 20],
+            zoom: 0.7,
+            interactive: false,
+            attributionControl: { compact: true }
+        });
+
+        this._map.on('load', () => {
+            this._map.addSource('visited-countries', {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: [] }
+            });
+
+            this._map.addLayer({
+                id: 'visited-countries-glow',
+                type: 'circle',
+                source: 'visited-countries',
+                paint: {
+                    'circle-radius': ['interpolate', ['linear'], ['get', 'count'], 1, 9, 50, 20],
+                    'circle-color': '#f97316',
+                    'circle-opacity': 0.25,
+                    'circle-blur': 0.7
+                }
+            });
+
+            this._map.addLayer({
+                id: 'visited-countries-dot',
+                type: 'circle',
+                source: 'visited-countries',
+                paint: {
+                    'circle-radius': 4,
+                    'circle-color': '#f97316',
+                    'circle-stroke-width': 1.5,
+                    'circle-stroke-color': '#ffffff'
+                }
+            });
+
+            this._mapReady = true;
+            this._updateSource();
+            this._map.resize();
+        });
+    }
+
+    _updateSource() {
+        const source = this._map?.getSource('visited-countries');
+        if (!source) return;
+
+        source.setData({
+            type: 'FeatureCollection',
+            features: this._countries
+                .filter(c => c.lat != null && c.lon != null)
+                .map(c => ({
+                    type: 'Feature',
+                    geometry: { type: 'Point', coordinates: [c.lon, c.lat] },
+                    properties: { code: c.code, count: c.count }
+                }))
+        });
     }
 }

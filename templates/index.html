@@ -69,6 +69,8 @@
                         </button>
                     </div>
                 </figcaption>
+
+                <div class="filmstrip" id="filmstrip" role="listbox" aria-label="Foto-Übersicht zum schnellen Springen"></div>
             </figure>
 
             <button class="nav-btn next" onclick="window.changePhoto(1)" aria-label="Nächstes Foto" title="Weiter">
@@ -115,6 +117,8 @@
                     <span class="stat-label">Fotos</span>
                 </div>
             </div>
+
+            <div id="country-overview-map" class="country-overview-map" role="img" aria-label="Übersichtskarte der besuchten Länder"></div>
 
             <div class="modal-footer">
                 <p>Bereits {{ visitor_count|default('0') }} Reisebegleiter waren hier.</p>

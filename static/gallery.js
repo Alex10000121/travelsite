@@ -27,6 +27,7 @@ export class GalleryController {
         this._bindKeyboard();
         this._bindTouch();
         this._bindFullscreen();
+        this._bindFilmstrip();
     }
 
     // -------------------------------------------------------------------------
@@ -53,6 +54,7 @@ export class GalleryController {
     loadPhotos(photos, startIndex = 0) {
         this._photos       = photos;
         this._currentIndex = startIndex;
+        this._renderFilmstrip();
         if (photos.length > 0) this._update();
     }
 
@@ -164,6 +166,7 @@ export class GalleryController {
         if (!photo) return;
 
         this._displayImage(photo.filename);
+        this._syncFilmstripActive();
 
         if (!this._isFixingMode) {
             this._setText(this._dom.txtLocation, photo.location || 'Unbekannt');
@@ -271,6 +274,65 @@ export class GalleryController {
                 }
                 imgEl.classList.add('is-fullscreen');
             }
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // Filmstrip (schnelles Springen zu einem beliebigen Foto)
+    // -------------------------------------------------------------------------
+
+    /** Baut die Miniaturleiste einmal pro geladener Fotoliste auf. */
+    _renderFilmstrip() {
+        const strip = this._dom.filmstrip;
+        if (!strip) return;
+
+        strip.innerHTML = '';
+        const fragment = document.createDocumentFragment();
+
+        this._photos.forEach((photo, i) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'filmstrip-item';
+            btn.dataset.index = String(i);
+            btn.setAttribute('role', 'option');
+            btn.setAttribute('aria-label', photo.location || `Foto ${i + 1}`);
+
+            const img = document.createElement('img');
+            img.src = `/api/thumb/${photo.filename}?token=${this._token}&size=blur`;
+            img.loading = 'lazy';
+            img.alt = '';
+
+            btn.appendChild(img);
+            fragment.appendChild(btn);
+        });
+
+        strip.appendChild(fragment);
+    }
+
+    /** Markiert das aktuelle Foto in der Filmstrip-Leiste und scrollt es in Sicht. */
+    _syncFilmstripActive() {
+        const strip = this._dom.filmstrip;
+        if (!strip) return;
+
+        const prevActive = strip.querySelector('.filmstrip-item.active');
+        prevActive?.classList.remove('active');
+
+        const activeEl = strip.children[this._currentIndex];
+        if (activeEl) {
+            activeEl.classList.add('active');
+            activeEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        }
+    }
+
+    /** Klick auf ein Filmstrip-Thumbnail springt direkt zu diesem Foto. */
+    _bindFilmstrip() {
+        const strip = this._dom.filmstrip;
+        if (!strip) return;
+
+        strip.addEventListener('click', (e) => {
+            const btn = e.target.closest('.filmstrip-item');
+            if (!btn) return;
+            this.setIndex(Number(btn.dataset.index));
         });
     }
 }

@@ -1,7 +1,7 @@
 // Einstiegspunkt: instanziiert alle Module und verdrahtet ihre Callbacks.
 
 import { fetchRoute, fetchStats } from './api.js';
-import { MapController }   from './map.js';
+import { MapController, CountryOverviewMap } from './map.js';
 import { GalleryController } from './gallery.js';
 import { AdminController } from './admin.js';
 
@@ -29,6 +29,7 @@ const dom = {
     txtLocation:    document.getElementById('photo-location'),
     txtDate:        document.getElementById('photo-date'),
     galleryPanel:   document.querySelector('.gallery-panel'),
+    filmstrip:      document.getElementById('filmstrip'),
 
     // Info-Bereiche
     infoStandard:   document.getElementById('info-standard'),
@@ -40,6 +41,7 @@ const dom = {
     btnHelp:        document.getElementById('open-help'),
     // Modals
     statsModal:     document.getElementById('stats-modal'),
+    countryMap:     document.getElementById('country-overview-map'),
     tutorialModal:  document.getElementById('tutorial-modal'),
     loginModal:     document.getElementById('login-modal'),
     loginForm:      document.getElementById('admin-login-form'),
@@ -67,12 +69,23 @@ const map = new MapController(dom.map, {
     flyDuration: 1.5,
 });
 
+const countryOverview = new CountryOverviewMap(dom.countryMap);
+
+// Karte erst beim tatsaechlichen Oeffnen des Stats-Modals initialisieren,
+// nicht beim Seitenaufruf - spart Kachel-Requests fuer alle, die nie hinschauen.
+if (dom.statsModal) {
+    new MutationObserver(() => {
+        if (dom.statsModal.classList.contains('show')) countryOverview.show();
+    }).observe(dom.statsModal, { attributes: true, attributeFilter: ['class'] });
+}
+
 const gallery = new GalleryController({
     currentPhoto: dom.currentPhoto,
     bgPhoto:      dom.bgPhoto,
     txtLocation:  dom.txtLocation,
     txtDate:      dom.txtDate,
     galleryPanel: dom.galleryPanel,
+    filmstrip:    dom.filmstrip,
 }, TOKEN);
 
 const admin = new AdminController({
@@ -194,6 +207,7 @@ async function init() {
 
         map.renderPhotos(allPhotos, routes || []);
         gallery.loadPhotos(allPhotos, 0);
+        countryOverview.setCountries(summarizeCountries(allPhotos));
 
     } catch (err) {
         console.error('Fehler beim Laden der Reisedaten:', err);
@@ -241,6 +255,26 @@ function extractCountryCode(locationString) {
     if (!locationString) return 'UNK';
     const parts = locationString.split(',');
     return parts.length > 1 ? parts[parts.length - 1].trim() : 'UNK';
+}
+
+/**
+ * Fasst die Fotos zu einem Punkt pro Land zusammen (erstes Foto des Landes
+ * als Position, Anzahl Fotos als Gewicht) - Grundlage fuer die Länder-Übersichtskarte.
+ * @param {Array<object>} photos - müssen countryCode, lat, lon enthalten
+ * @returns {Array<{code: string, lat: number, lon: number, count: number}>}
+ */
+function summarizeCountries(photos) {
+    const byCountry = new Map();
+    for (const p of photos) {
+        if (p.lat == null || p.lon == null || p.countryCode === 'UNK') continue;
+        const existing = byCountry.get(p.countryCode);
+        if (existing) {
+            existing.count++;
+        } else {
+            byCountry.set(p.countryCode, { code: p.countryCode, lat: p.lat, lon: p.lon, count: 1 });
+        }
+    }
+    return [...byCountry.values()];
 }
 
 function setStatText(id, value) {
