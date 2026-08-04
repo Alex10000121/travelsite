@@ -282,15 +282,29 @@ body, html {
 }
 .modal-footer p { margin: 0; opacity: 0.6; }
 
-/* Länder-Übersichtskarte */
-.country-overview-map {
-    margin-top: 20px;
-    height: 160px;
-    border-radius: 15px;
-    overflow: hidden;
-    background: #111;
+/* Länder-Liste (Flagge + Name) */
+.country-list {
+    list-style: none;
+    margin: 20px 0 0;
+    padding: 0;
+    max-height: 220px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
-.country-overview-map .maplibregl-ctrl-attrib { font-size: 9px; }
+.country-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 8px 14px;
+    text-align: left;
+}
+.country-list .country-flag { font-size: 1.4rem; line-height: 1; }
+.country-list .country-name { flex: 1; font-size: 0.95rem; }
+.country-list .country-count { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
 
 /* Tutorial Styles */
 .tutorial-steps { display: grid; grid-template-columns: 1fr; gap: 20px; margin: 20px 0; text-align: center; }
