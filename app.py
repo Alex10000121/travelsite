@@ -8,7 +8,7 @@ import hashlib
 import logging
 import json
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 import requests
@@ -311,6 +311,7 @@ def init_db():
             conn.execute("INSERT OR IGNORE INTO global_stats (key, value) VALUES ('visitor_count', 0)")
             conn.execute('CREATE TABLE IF NOT EXISTS active_sessions (hash TEXT PRIMARY KEY, timestamp REAL)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_sessions_timestamp ON active_sessions(timestamp)')
+            conn.execute('CREATE TABLE IF NOT EXISTS visits_by_day (date TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0)')
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS routes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -338,6 +339,13 @@ def track_visitor_count():
             if not cursor.fetchone():
                 conn.execute("INSERT INTO active_sessions (hash, timestamp) VALUES (?, ?)", (visitor_hash, now))
                 conn.execute("UPDATE global_stats SET value = value + 1 WHERE key = 'visitor_count'")
+
+                today = datetime.fromtimestamp(now).strftime('%Y-%m-%d')
+                conn.execute(
+                    "INSERT INTO visits_by_day (date, count) VALUES (?, 1) "
+                    "ON CONFLICT(date) DO UPDATE SET count = count + 1",
+                    (today,)
+                )
             else:
                 conn.execute("UPDATE active_sessions SET timestamp = ? WHERE hash = ?", (now, visitor_hash))
 
@@ -784,14 +792,34 @@ def update_location():
         return jsonify({'error': str(e)}), 500
 
 
+ADMIN_PHOTOS_PAGE_SIZE = 60
+
+
 @app.route('/api/admin/photos')
 @admin_required
 def admin_list_photos():
+    q = request.args.get('q', '').strip()
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (TypeError, ValueError):
+        offset = 0
+
     try:
         with get_db() as conn:
+            if q:
+                like = f"%{q}%"
+                where = "WHERE location LIKE ? OR filename LIKE ?"
+                params = (like, like)
+            else:
+                where = ""
+                params = ()
+
             rows = conn.execute(
-                "SELECT filename, lat, lon, timestamp, location FROM photos ORDER BY timestamp DESC"
+                f"SELECT filename, lat, lon, timestamp, location FROM photos {where} "
+                f"ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+                (*params, ADMIN_PHOTOS_PAGE_SIZE, offset)
             ).fetchall()
+            total = conn.execute(f"SELECT COUNT(*) as cnt FROM photos {where}", params).fetchone()['cnt']
     except Exception as e:
         logger.error(f"Admin photo list error: {e}")
         return jsonify({'error': 'DB Error'}), 500
@@ -802,7 +830,7 @@ def admin_list_photos():
         p['date_str'] = datetime.fromtimestamp(p['timestamp']).strftime('%d.%m.%Y') if p['timestamp'] else ''
         photos.append(p)
 
-    return jsonify({'photos': photos})
+    return jsonify({'photos': photos, 'total': total, 'offset': offset, 'limit': ADMIN_PHOTOS_PAGE_SIZE})
 
 
 @app.route('/api/admin/photos/<path:filename>', methods=['DELETE'])
@@ -828,6 +856,40 @@ def admin_delete_photo(filename):
     except Exception as e:
         logger.error(f"Delete photo error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+VISITOR_HISTORY_DAYS = 30
+
+
+@app.route('/api/admin/visitor-stats')
+@admin_required
+def admin_visitor_stats():
+    now = time.time()
+    try:
+        with get_db() as conn:
+            row = conn.execute("SELECT value FROM global_stats WHERE key = 'visitor_count'").fetchone()
+            total = row['value'] if row else 0
+
+            active_row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM active_sessions WHERE timestamp >= ?", (now - 3600,)
+            ).fetchone()
+            active_now = active_row['cnt'] if active_row else 0
+
+            day_rows = conn.execute(
+                "SELECT date, count FROM visits_by_day ORDER BY date DESC LIMIT ?", (VISITOR_HISTORY_DAYS,)
+            ).fetchall()
+    except Exception as e:
+        logger.error(f"Admin visitor stats error: {e}")
+        return jsonify({'error': 'DB Error'}), 500
+
+    counts_by_date = {r['date']: r['count'] for r in day_rows}
+    today = datetime.fromtimestamp(now).date()
+    daily = []
+    for i in range(VISITOR_HISTORY_DAYS - 1, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        daily.append({'date': d, 'count': counts_by_date.get(d, 0)})
+
+    return jsonify({'total': total, 'active_now': active_now, 'daily': daily})
 
 
 def start_background_services():

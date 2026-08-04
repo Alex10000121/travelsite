@@ -3,6 +3,7 @@
 import { MapController } from './map.js';
 import { AdminUploadCard } from './admin-upload.js';
 import { AdminPhotoManager } from './admin-manage.js';
+import { AdminVisitorStats } from './admin-visitors.js';
 
 const uploadMap = new MapController(document.getElementById('admin-map'), { center: [50, 10], zoom: 4 });
 
@@ -20,10 +21,19 @@ new AdminUploadCard({
 const fixMap = new MapController(document.getElementById('admin-fix-map'), { center: [50, 10], zoom: 4 });
 
 new AdminPhotoManager({
-    list:       document.getElementById('admin-photo-list'),
-    modal:      document.getElementById('admin-fix-modal'),
-    closeBtn:   document.getElementById('admin-fix-close'),
-    confirmBtn: document.getElementById('admin-fix-confirm'),
+    list:         document.getElementById('admin-photo-list'),
+    searchInput:  document.getElementById('admin-photo-search'),
+    loadMoreBtn:  document.getElementById('admin-photo-load-more'),
+    modal:        document.getElementById('admin-fix-modal'),
+    closeBtn:     document.getElementById('admin-fix-close'),
+    confirmBtn:   document.getElementById('admin-fix-confirm'),
 }, fixMap);
+
+new AdminVisitorStats({
+    totalEl:        document.getElementById('admin-visitor-total'),
+    activeEl:       document.getElementById('admin-visitor-active'),
+    chartContainer: document.getElementById('admin-visitor-chart'),
+    tooltip:        document.getElementById('admin-visitor-tooltip'),
+});
 
 // Weitere Admin-Feature-Karten werden hier analog instanziiert.

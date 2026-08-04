@@ -1,16 +1,24 @@
-// Verwaltungs-Feature der /admin-Seite: bestehende Fotos auflisten,
+// Verwaltungs-Feature der /admin-Seite: bestehende Fotos durchsuchen/auflisten,
 // GPS nachträglich korrigieren (Mini-Karte im Modal) und löschen.
+//
+// Serverseitig paginiert (siehe api.js) statt alle Fotos auf einmal zu laden —
+// bei mehreren hundert/tausend Fotos würde das sonst hunderte Thumbnail-Requests
+// und DOM-Knoten in einem Schlag erzeugen.
 
 import { fetchAdminPhotos, deletePhoto, updateLocation } from './api.js';
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 export class AdminPhotoManager {
 
     /**
      * @param {object} dom
-     * @param {HTMLElement} dom.list       - <ul> für die Foto-Liste
-     * @param {HTMLElement} dom.modal      - Fix-GPS-Modal (.modal-overlay)
-     * @param {HTMLElement} dom.closeBtn   - Modal schließen
-     * @param {HTMLElement} dom.confirmBtn - Position speichern
+     * @param {HTMLElement} dom.list        - <ul> für die Foto-Liste
+     * @param {HTMLInputElement} dom.searchInput
+     * @param {HTMLElement} dom.loadMoreBtn
+     * @param {HTMLElement} dom.modal       - Fix-GPS-Modal (.modal-overlay)
+     * @param {HTMLElement} dom.closeBtn    - Modal schließen
+     * @param {HTMLElement} dom.confirmBtn  - Position speichern
      *
      * @param {import('./map.js').MapController} map - Mini-Karte im Modal
      */
@@ -19,32 +27,67 @@ export class AdminPhotoManager {
         this._map = map;
         this._activeFilename = null;
 
+        this._query = '';
+        this._offset = 0;
+        this._limit = 60;
+        this._total = 0;
+        this._searchTimer = null;
+
         dom.closeBtn?.addEventListener('click', () => this._closeModal());
         dom.confirmBtn?.addEventListener('click', () => this._confirmFix());
+        dom.searchInput?.addEventListener('input', () => this._onSearchInput());
+        dom.loadMoreBtn?.addEventListener('click', () => this.load({ reset: false }));
 
         this.load();
     }
 
-    async load() {
+    /**
+     * @param {object} [opts]
+     * @param {boolean} [opts.reset=true] - true: Liste ersetzen (neue Suche/Erststart),
+     *                                       false: nächste Seite anhängen
+     */
+    async load({ reset = true } = {}) {
         try {
-            const photos = await fetchAdminPhotos();
-            this._render(photos);
+            const data = await fetchAdminPhotos({
+                q: this._query,
+                offset: reset ? 0 : this._offset,
+            });
+
+            this._offset = data.offset + data.photos.length;
+            this._total = data.total;
+            this._limit = data.limit;
+
+            this._render(data.photos, { append: !reset });
+            this._updateLoadMoreVisibility();
         } catch (err) {
             alert(err.message);
         }
     }
 
-    _render(photos) {
+    _onSearchInput() {
+        clearTimeout(this._searchTimer);
+        this._searchTimer = setTimeout(() => {
+            this._query = this._dom.searchInput.value.trim();
+            this.load({ reset: true });
+        }, SEARCH_DEBOUNCE_MS);
+    }
+
+    _updateLoadMoreVisibility() {
+        const { loadMoreBtn } = this._dom;
+        if (!loadMoreBtn) return;
+        loadMoreBtn.style.display = this._offset < this._total ? '' : 'none';
+    }
+
+    _render(photos, { append = false } = {}) {
         const { list } = this._dom;
         if (!list) return;
 
-        list.innerHTML = '';
-        const fragment = document.createDocumentFragment();
+        if (!append) list.innerHTML = '';
 
+        const fragment = document.createDocumentFragment();
         for (const photo of photos) {
             fragment.appendChild(this._buildItem(photo));
         }
-
         list.appendChild(fragment);
     }
 
@@ -119,7 +162,7 @@ export class AdminPhotoManager {
         try {
             await updateLocation(filename, pos.lat, pos.lon);
             this._closeModal();
-            await this.load();
+            await this.load({ reset: true });
         } catch (err) {
             alert(err.message);
         }
@@ -132,6 +175,9 @@ export class AdminPhotoManager {
         try {
             await deletePhoto(photo.filename);
             liElement.remove();
+            this._total = Math.max(0, this._total - 1);
+            this._offset = Math.max(0, this._offset - 1);
+            this._updateLoadMoreVisibility();
         } catch (err) {
             alert(err.message);
         }

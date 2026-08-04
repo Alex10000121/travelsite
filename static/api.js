@@ -103,13 +103,22 @@ export async function updateLocation(filename, lat, lon) {
 }
 
 /**
- * Lädt alle Fotos für die Admin-Verwaltungsansicht (inkl. Ort/Datum).
- * @returns {Promise<Array>}
+ * Lädt eine Seite Fotos für die Admin-Verwaltungsansicht (inkl. Ort/Datum),
+ * optional gefiltert nach Ort/Dateiname. Serverseitig paginiert, damit bei
+ * vielen hundert Fotos nicht alles auf einmal geladen/gerendert wird.
+ * @param {object} [opts]
+ * @param {string} [opts.q] - Suchbegriff (Ort oder Dateiname)
+ * @param {number} [opts.offset]
+ * @returns {Promise<{photos: Array, total: number, offset: number, limit: number}>}
  */
-export async function fetchAdminPhotos() {
+export async function fetchAdminPhotos({ q = '', offset = 0 } = {}) {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (offset) params.set('offset', String(offset));
+
     let res;
     try {
-        res = await fetch('/api/admin/photos');
+        res = await fetch(`/api/admin/photos?${params.toString()}`);
     } catch (err) {
         throw new Error('Verbindungsfehler beim Laden der Fotos.');
     }
@@ -117,8 +126,7 @@ export async function fetchAdminPhotos() {
     if (!res.ok) {
         throw new Error(`Fotos konnten nicht geladen werden (HTTP ${res.status}).`);
     }
-    const json = await res.json();
-    return json.photos;
+    return res.json();
 }
 
 /**
@@ -137,4 +145,23 @@ export async function deletePhoto(filename) {
     if (!res.ok) {
         throw new Error(`Foto konnte nicht gelöscht werden (HTTP ${res.status}).`);
     }
+}
+
+/**
+ * Lädt Besucherzahlen für das Admin-Dashboard: Gesamt, aktuell aktive Sessions
+ * und den Tagesverlauf der letzten 30 Tage.
+ * @returns {Promise<{total: number, active_now: number, daily: Array<{date: string, count: number}>}>}
+ */
+export async function fetchVisitorStats() {
+    let res;
+    try {
+        res = await fetch('/api/admin/visitor-stats');
+    } catch (err) {
+        throw new Error('Verbindungsfehler beim Laden der Besucherzahlen.');
+    }
+
+    if (!res.ok) {
+        throw new Error(`Besucherzahlen konnten nicht geladen werden (HTTP ${res.status}).`);
+    }
+    return res.json();
 }

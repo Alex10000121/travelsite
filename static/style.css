@@ -357,6 +357,10 @@ body.admin-page { overflow-y: auto; }
 .admin-log-ok { color: #86efac; }
 .admin-log-error { color: #f87171; }
 
+.admin-search-input { width: 100%; padding: 10px 14px; margin-bottom: 14px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: var(--text-main); font-size: 0.9rem; }
+.admin-search-input::placeholder { color: var(--text-muted); }
+.admin-search-input:focus { outline: none; border-color: var(--accent-color); }
+
 .admin-photo-list { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .admin-photo-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.05); }
 .admin-photo-item img { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; }
@@ -370,8 +374,28 @@ body.admin-page { overflow-y: auto; }
 .admin-delete-btn { background: #7f1d1d; }
 .admin-delete-btn:hover { background: #991b1b; }
 
+.admin-load-more-btn { width: 100%; margin-top: 12px; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: var(--text-main); font-size: 0.85rem; cursor: pointer; }
+.admin-load-more-btn:hover { background: rgba(255,255,255,0.1); }
+
 #admin-fix-modal .modal-content { max-width: 600px; }
 #admin-fix-map { width: 100%; height: 320px; border-radius: 14px; overflow: hidden; margin: 18px 0; }
+
+.admin-visitor-stats { margin-bottom: 4px; }
+
+.visitor-chart-wrap { position: relative; margin-top: 10px; }
+.visitor-chart { width: 100%; height: 160px; }
+.visitor-chart-svg { width: 100%; height: 100%; display: block; }
+
+.visitor-chart-area { fill: rgba(59, 130, 246, 0.12); }
+.visitor-chart-line { fill: none; stroke: var(--accent-color); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.visitor-chart-baseline { stroke: rgba(255,255,255,0.12); stroke-width: 1; }
+.visitor-chart-crosshair { stroke: rgba(255,255,255,0.25); stroke-width: 1; }
+.visitor-chart-enddot, .visitor-chart-hoverdot { fill: var(--accent-color); stroke: var(--panel-color); stroke-width: 2; }
+.visitor-chart-hitarea { fill: transparent; cursor: crosshair; }
+
+.visitor-tooltip { position: absolute; top: -6px; transform: translate(-50%, -100%); background: #1e1e1e; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 10px; font-size: 0.75rem; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 16px rgba(0,0,0,0.4); }
+.visitor-tooltip-date { color: var(--text-muted); margin-right: 6px; }
+.visitor-tooltip-count { color: var(--text-main); }
 
 /* =========================================
    9. MOBILE OPTIMIZATION

@@ -50,7 +50,39 @@
 
             <section class="admin-card" id="card-manage">
                 <h2>Fotos verwalten</h2>
+
+                <input type="search" id="admin-photo-search" class="admin-search-input"
+                       placeholder="Ort oder Dateiname suchen…" aria-label="Fotos durchsuchen">
+
                 <ul id="admin-photo-list" class="admin-photo-list" aria-label="Vorhandene Fotos"></ul>
+
+                <button type="button" id="admin-photo-load-more" class="admin-load-more-btn" style="display:none;">
+                    Weitere laden
+                </button>
+            </section>
+
+            <section class="admin-card" id="card-visitors">
+                <h2>Besucher</h2>
+
+                <div class="stats-grid admin-visitor-stats">
+                    <div class="stat-box">
+                        <span class="stat-value" id="admin-visitor-total">0</span>
+                        <span class="stat-label">Gesamt</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-value" id="admin-visitor-active">0</span>
+                        <span class="stat-label">Aktuell online</span>
+                    </div>
+                </div>
+
+                <p class="admin-hint">Besuche der letzten 30 Tage</p>
+                <div class="visitor-chart-wrap">
+                    <div id="admin-visitor-chart" class="visitor-chart"></div>
+                    <div id="admin-visitor-tooltip" class="visitor-tooltip" style="display:none;">
+                        <span class="visitor-tooltip-date"></span>
+                        <strong class="visitor-tooltip-count"></strong>
+                    </div>
+                </div>
             </section>
 
             <!-- Weitere Admin-Features werden hier als zusätzliche .admin-card-Sections ergänzt -->

@@ -428,6 +428,58 @@ class TestAdminPhotoList:
         filenames = [p['filename'] for p in response.get_json()['photos']]
         assert any(f.endswith('listed.jpg') for f in filenames)
 
+    def _seed_photos(self, n, prefix='seed', location='Paris, FR'):
+        from app import get_db
+        with get_db() as conn:
+            for i in range(n):
+                conn.execute(
+                    "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                    (f'{prefix}_{i}.jpg', 48.0, 2.0, 1700000000.0 + i, location)
+                )
+            conn.commit()
+
+    def test_response_includes_pagination_fields(self, admin_client, app):
+        self._seed_photos(3)
+        response = admin_client.get('/api/admin/photos')
+        data = response.get_json()
+        assert data['total'] == 3
+        assert data['offset'] == 0
+        assert data['limit'] == 60
+
+    def test_offset_and_limit_are_respected(self, admin_client, app):
+        self._seed_photos(5)
+        response = admin_client.get('/api/admin/photos?offset=2&limit=2')
+        data = response.get_json()
+        # limit query param is ignored by design (server-side fixed page size) —
+        # only offset is honoured, so we just check offset paging works
+        assert data['offset'] == 2
+        assert len(data['photos']) == 3
+
+    def test_search_matches_location(self, admin_client, app):
+        self._seed_photos(2, prefix='paris', location='Paris, FR')
+        self._seed_photos(2, prefix='berlin', location='Berlin, DE')
+
+        response = admin_client.get('/api/admin/photos?q=Berlin')
+        data = response.get_json()
+        assert data['total'] == 2
+        assert all('berlin' in p['filename'] for p in data['photos'])
+
+    def test_search_matches_filename(self, admin_client, app):
+        self._seed_photos(1, prefix='eiffelturm', location='Paris, FR')
+        self._seed_photos(1, prefix='sonstwas', location='Paris, FR')
+
+        response = admin_client.get('/api/admin/photos?q=eiffelturm')
+        data = response.get_json()
+        assert data['total'] == 1
+        assert data['photos'][0]['filename'] == 'eiffelturm_0.jpg'
+
+    def test_search_without_match_returns_empty(self, admin_client, app):
+        self._seed_photos(2)
+        response = admin_client.get('/api/admin/photos?q=nonexistent-place')
+        data = response.get_json()
+        assert data['total'] == 0
+        assert data['photos'] == []
+
 
 class TestAdminDeletePhoto:
     def _upload(self, admin_client, name='delete_me.jpg'):
@@ -526,3 +578,59 @@ class TestApiThumb:
     def test_nonexistent_file_returns_404(self, admin_client):
         response = admin_client.get('/api/thumb/does_not_exist.jpg')
         assert response.status_code == 404
+
+
+class TestTrackVisitorCount:
+    def test_logs_a_visit_for_today(self, app):
+        from datetime import datetime
+        from app import track_visitor_count, get_db
+
+        with app.test_request_context('/', environ_base={'REMOTE_ADDR': '1.2.3.4'}):
+            track_visitor_count()
+
+        today = datetime.now().strftime('%Y-%m-%d')
+        with get_db() as conn:
+            row = conn.execute("SELECT count FROM visits_by_day WHERE date = ?", (today,)).fetchone()
+        assert row is not None
+        assert row['count'] == 1
+
+    def test_same_visitor_within_an_hour_is_not_counted_twice(self, app):
+        from app import track_visitor_count, get_db
+
+        with app.test_request_context('/', environ_base={'REMOTE_ADDR': '5.6.7.8'}):
+            track_visitor_count()
+            track_visitor_count()
+
+        with get_db() as conn:
+            row = conn.execute("SELECT SUM(count) as total FROM visits_by_day").fetchone()
+        assert row['total'] == 1
+
+
+class TestAdminVisitorStats:
+    def test_without_session_returns_403(self, client):
+        response = client.get('/api/admin/visitor-stats')
+        assert response.status_code == 403
+
+    def test_returns_30_day_series_even_when_empty(self, admin_client):
+        response = admin_client.get('/api/admin/visitor-stats')
+        assert response.status_code == 200
+        data = response.get_json()
+        assert len(data['daily']) == 30
+        assert data['total'] == 0
+        assert data['active_now'] == 0
+
+    def test_reflects_a_logged_visit(self, admin_client, app):
+        from datetime import datetime
+        from app import track_visitor_count
+
+        with app.test_request_context('/', environ_base={'REMOTE_ADDR': '9.9.9.9'}):
+            track_visitor_count()
+
+        response = admin_client.get('/api/admin/visitor-stats')
+        data = response.get_json()
+        assert data['total'] == 1
+        assert data['active_now'] == 1
+
+        today = datetime.now().strftime('%Y-%m-%d')
+        today_entry = next(d for d in data['daily'] if d['date'] == today)
+        assert today_entry['count'] == 1

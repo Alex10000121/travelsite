@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../static/api.js', () => ({
     fetchAdminPhotos: vi.fn(),
@@ -20,17 +20,23 @@ function makeMockMap() {
 
 function makeDom() {
     return {
-        list:       document.createElement('ul'),
-        modal:      document.createElement('div'),
-        closeBtn:   document.createElement('button'),
-        confirmBtn: document.createElement('button'),
+        list:        document.createElement('ul'),
+        searchInput: document.createElement('input'),
+        loadMoreBtn: document.createElement('button'),
+        modal:       document.createElement('div'),
+        closeBtn:    document.createElement('button'),
+        confirmBtn:  document.createElement('button'),
     };
+}
+
+function emptyPage() {
+    return { photos: [], total: 0, offset: 0, limit: 60 };
 }
 
 // Der Konstruktor stößt selbst einen load() an (fire-and-forget). Ohne das
 // abzuwarten würde dessen Resolve später mitten im Test die Liste zurücksetzen.
 async function makeManager(mapOverride) {
-    fetchAdminPhotos.mockResolvedValue([]);
+    fetchAdminPhotos.mockResolvedValue(emptyPage());
     const mgr = new AdminPhotoManager(makeDom(), mapOverride ?? makeMockMap());
     await mgr.load();
     return mgr;
@@ -57,6 +63,14 @@ describe('_render', () => {
         expect(items[0].querySelector('.admin-photo-location').textContent).toBe('Paris, FR');
         expect(items[1].querySelector('.admin-photo-date').textContent).toBe('02.01.2024');
     });
+
+    it('hängt bei append an, statt die Liste zu ersetzen', async () => {
+        const mgr = await makeManager();
+        mgr._render([PHOTOS[0]]);
+        mgr._render([PHOTOS[1]], { append: true });
+
+        expect(mgr._dom.list.querySelectorAll('.admin-photo-item')).toHaveLength(2);
+    });
 });
 
 describe('load', () => {
@@ -67,6 +81,81 @@ describe('load', () => {
         await mgr.load();
 
         expect(alert).toHaveBeenCalledWith('Netzwerkfehler');
+    });
+
+    it('blendet den Weitere-laden-Button ein, solange noch Seiten fehlen', async () => {
+        fetchAdminPhotos.mockResolvedValue({ photos: PHOTOS, total: 5, offset: 0, limit: 2 });
+        const mgr = new AdminPhotoManager(makeDom(), makeMockMap());
+
+        await mgr.load();
+
+        expect(mgr._dom.loadMoreBtn.style.display).toBe('');
+    });
+
+    it('blendet den Weitere-laden-Button aus, sobald alle Seiten geladen sind', async () => {
+        fetchAdminPhotos.mockResolvedValue({ photos: PHOTOS, total: 2, offset: 0, limit: 60 });
+        const mgr = new AdminPhotoManager(makeDom(), makeMockMap());
+
+        await mgr.load();
+
+        expect(mgr._dom.loadMoreBtn.style.display).toBe('none');
+    });
+
+    it('lädt bei reset:false die nächste Seite ab dem aktuellen Offset', async () => {
+        const mgr = await makeManager();
+        mgr._offset = 60;
+        fetchAdminPhotos.mockResolvedValue({ photos: [PHOTOS[0]], total: 61, offset: 60, limit: 60 });
+
+        await mgr.load({ reset: false });
+
+        expect(fetchAdminPhotos).toHaveBeenCalledWith({ q: '', offset: 60 });
+    });
+
+    it('klickt man auf Weitere laden, wird load({reset:false}) ausgelöst', async () => {
+        const mgr = await makeManager();
+        fetchAdminPhotos.mockClear();
+        fetchAdminPhotos.mockResolvedValue(emptyPage());
+
+        mgr._dom.loadMoreBtn.click();
+        await vi.waitFor(() => expect(fetchAdminPhotos).toHaveBeenCalled());
+
+        expect(fetchAdminPhotos.mock.calls[0][0]).toEqual({ q: '', offset: 0 });
+    });
+});
+
+describe('Suche (_onSearchInput)', () => {
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+    afterEach(() => vi.useRealTimers());
+
+    it('lädt debounced neu ab Seite 1, sobald ins Suchfeld getippt wird', async () => {
+        const mgr = await makeManager();
+        fetchAdminPhotos.mockClear();
+        fetchAdminPhotos.mockResolvedValue({ photos: [PHOTOS[1]], total: 1, offset: 0, limit: 60 });
+
+        mgr._dom.searchInput.value = 'Berlin';
+        mgr._dom.searchInput.dispatchEvent(new Event('input'));
+
+        expect(fetchAdminPhotos).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(300);
+
+        expect(fetchAdminPhotos).toHaveBeenCalledWith({ q: 'Berlin', offset: 0 });
+    });
+
+    it('feuert bei schnellem Tippen nur eine Anfrage (Debounce)', async () => {
+        const mgr = await makeManager();
+        fetchAdminPhotos.mockClear();
+        fetchAdminPhotos.mockResolvedValue(emptyPage());
+
+        for (const value of ['B', 'Be', 'Ber', 'Berl']) {
+            mgr._dom.searchInput.value = value;
+            mgr._dom.searchInput.dispatchEvent(new Event('input'));
+            await vi.advanceTimersByTimeAsync(100);
+        }
+        await vi.advanceTimersByTimeAsync(300);
+
+        expect(fetchAdminPhotos).toHaveBeenCalledTimes(1);
+        expect(fetchAdminPhotos).toHaveBeenCalledWith({ q: 'Berl', offset: 0 });
     });
 });
 
