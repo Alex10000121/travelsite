@@ -6,6 +6,7 @@
 // und DOM-Knoten in einem Schlag erzeugen.
 
 import { fetchAdminPhotos, deletePhoto, updateLocation } from './api.js';
+import { encodeFilenamePath } from './filename-utils.js';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -96,7 +97,7 @@ export class AdminPhotoManager {
         li.className = 'admin-photo-item';
 
         const img = document.createElement('img');
-        img.src = `/api/thumb/${photo.filename}?size=blur`;
+        img.src = `/api/thumb/${encodeFilenamePath(photo.filename)}?size=blur`;
         img.loading = 'lazy';
         img.alt = '';
         li.appendChild(img);

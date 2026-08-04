@@ -84,6 +84,16 @@ class TestAdminLogin:
                                content_type='application/json')
         assert response.status_code == 403
 
+    def test_non_string_admin_token_returns_403_not_500(self, client):
+        response = client.post('/admin/login',
+                               data=json.dumps({'admin_token': 12345}),
+                               content_type='application/json')
+        assert response.status_code == 403
+
+    def test_wrong_content_type_returns_403_not_415(self, client):
+        response = client.post('/admin/login', data='not json')
+        assert response.status_code == 403
+
 
 class TestAdminLogout:
     def test_logout_clears_session(self, admin_client):
@@ -137,6 +147,20 @@ class TestUploadPhoto:
         data = response.get_json()
         assert 'missing_gps' in data
         assert data['missing_gps'] is True
+
+    def test_unsupported_extension_returns_400(self, admin_client):
+        response = admin_client.post('/api/upload', data={
+            'photo': (io.BytesIO(b'<script>alert(1)</script>'), 'evil.html'),
+        }, content_type='multipart/form-data')
+        assert response.status_code == 400
+
+    def test_unsupported_extension_file_is_not_saved(self, admin_client, app):
+        import app as flask_module
+        admin_client.post('/api/upload', data={
+            'photo': (io.BytesIO(b'<script>alert(1)</script>'), 'evil.html'),
+        }, content_type='multipart/form-data')
+        saved = os.listdir(flask_module.CONFIG['PHOTO_DIR'])
+        assert not any(f.endswith('.html') for f in saved)
 
 
 class TestUploadWithFormCoords:
@@ -340,6 +364,19 @@ class TestUpdateLocation:
     def test_missing_data_returns_400(self, admin_client):
         response = admin_client.post('/api/update_location',
                                      data=json.dumps({}),
+                                     content_type='application/json')
+        assert response.status_code == 400
+
+    def test_non_numeric_lat_returns_400(self, admin_client):
+        response = admin_client.post('/api/update_location',
+                                     data=json.dumps({'filename': 'a.jpg', 'lat': 'abc', 'lon': 11.0}),
+                                     content_type='application/json')
+        assert response.status_code == 400
+        assert 'error' in response.get_json()
+
+    def test_out_of_range_lat_returns_400(self, admin_client):
+        response = admin_client.post('/api/update_location',
+                                     data=json.dumps({'filename': 'a.jpg', 'lat': 999, 'lon': -4000}),
                                      content_type='application/json')
         assert response.status_code == 400
 

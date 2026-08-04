@@ -183,6 +183,25 @@ class TestGetLocationName:
             assert result == "London, GB"
 
 
+class TestThumbPath:
+    def test_flat_filename_unchanged(self, app):
+        from app import _thumb_path
+        import app as flask_module
+        import os
+        result = _thumb_path('trip_photo.jpg')
+        assert result == os.path.join(flask_module.CONFIG['THUMB_DIR'], 'trip_photo.jpg')
+
+    def test_subdir_and_flat_name_do_not_collide(self, app):
+        from app import _thumb_path
+        nested = _thumb_path('a/b.jpg')
+        flat = _thumb_path('a_b.jpg')
+        assert nested != flat
+
+    def test_same_subdir_path_is_stable(self, app):
+        from app import _thumb_path
+        assert _thumb_path('a/b.jpg') == _thumb_path('a/b.jpg')
+
+
 class TestDatabase:
     def test_wal_journal_mode_is_enabled(self, app):
         from app import get_db
@@ -244,6 +263,22 @@ class TestIndexPhoto:
         no_gps_dir = os.path.join(abs_photo_dir, 'no_gps')
         os.makedirs(no_gps_dir, exist_ok=True)
         img_path = os.path.join(no_gps_dir, 'already_moved.jpg')
+        self._make_plain_jpeg(Path(img_path))
+
+        index_photo(img_path, abs_photo_dir)
+
+        assert os.path.exists(img_path)
+        with get_db() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM photos").fetchone()
+        assert row[0] == 0
+
+    def test_hidden_staging_file_is_skipped(self, app):
+        """Upload-Staging-Dateien (Praefix '.') duerfen vom Watchdog-Scanner nicht
+        parallel zum Upload-Handler eingelesen werden (Race-Condition-Schutz)."""
+        import app as flask_module
+        from app import index_photo, get_db
+        abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
+        img_path = os.path.join(abs_photo_dir, '.upload_staging.jpg')
         self._make_plain_jpeg(Path(img_path))
 
         index_photo(img_path, abs_photo_dir)

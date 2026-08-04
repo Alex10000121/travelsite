@@ -60,11 +60,14 @@ docker run -d \
   -v /pfad/fuer/daten:/data \
   -e ACCESS_TOKEN="dein-geheimes-passwort" \
   -e ADMIN_TOKEN="admin-upload-passwort" \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
   -e CONTACT_EMAIL="deine@email.de" \
   -e MAPTILER_API_KEY="dein-maptiler-key" \
   --restart always \
   ghcr.io/alex10000121/travelsite:latest
 ```
+
+`ACCESS_TOKEN`, `ADMIN_TOKEN` und `SECRET_KEY` sind Pflicht — ohne sie startet der Container nicht (bewusst kein unsicherer Standardwert).
 
 Anschließend die Seite im Browser öffnen:
 
@@ -78,13 +81,14 @@ http://DEINE-IP:5050/?token=dein-geheimes-passwort
 git clone https://github.com/alex10000121/travelsite.git
 cd travelsite
 pip install -r requirements.txt
+cp .env.example .env   # ACCESS_TOKEN, ADMIN_TOKEN, SECRET_KEY eintragen
 python app.py
 ```
 
-Die App ist dann erreichbar unter:
+`.env` wird automatisch geladen (python-dotenv). Die App ist dann erreichbar unter:
 
 ```
-http://127.0.0.1:5000/?token=geheim123
+http://127.0.0.1:5000/?token=<dein ACCESS_TOKEN>
 ```
 
 ---
@@ -96,6 +100,7 @@ Alle Einstellungen werden über Umgebungsvariablen gesetzt. Für den lokalen Bet
 ```env
 ACCESS_TOKEN=dein-geheimes-passwort
 ADMIN_TOKEN=admin-upload-passwort
+SECRET_KEY=
 CONTACT_EMAIL=deine@email.de
 MAPTILER_API_KEY=dein-maptiler-key
 PHOTO_DIR=./photos
@@ -103,15 +108,19 @@ THUMB_DIR=./data/thumbs
 DB_PATH=./data/trips.db
 ```
 
+Siehe [`.env.example`](.env.example) als Vorlage.
+
 | Variable         | Standardwert            | Beschreibung                                                          |
 |------------------|-------------------------|-----------------------------------------------------------------------|
-| `ACCESS_TOKEN`   | `geheim123`             | Token für den Lesezugriff – wird an die URL angehängt                 |
-| `ADMIN_TOKEN`    | `admin_geheim`          | Passwort für Upload, Löschen und GPS-Korrekturen                      |
+| `ACCESS_TOKEN`   | **Pflicht, kein Standard** | Token für den Lesezugriff – wird an die URL angehängt              |
+| `ADMIN_TOKEN`    | **Pflicht, kein Standard** | Passwort für Upload, Löschen und GPS-Korrekturen                   |
+| `SECRET_KEY`     | **Pflicht, kein Standard** | Signiert die Admin-Session. Zufällig generieren, z.B. `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `MAPTILER_API_KEY` | *(leer)*              | API-Key für MapTiler (3D-Terrain, Gebäude). Ohne Key: OSM-Fallback    |
 | `CONTACT_EMAIL`  | `deine.email@beispiel.de` | Wird auf der Login-Seite angezeigt                                  |
 | `PHOTO_DIR`      | `/photos`               | Ordner mit den Original-Fotos                                         |
 | `THUMB_DIR`      | `/data/thumbs`          | Speicherort für generierte Vorschaubilder                             |
 | `DB_PATH`        | `/data/trips.db`        | Pfad zur SQLite-Datenbank                                             |
+| `FLASK_DEBUG`    | `0`                     | `1` aktiviert Werkzeug-Debugger/Reloader **und** deaktiviert das Secure-Cookie-Flag – nur für lokale Entwicklung |
 
 > **MapTiler API-Key**: Einen kostenlosen Key gibt es unter [maptiler.com](https://www.maptiler.com/). Ohne Key läuft die Karte als 2D-OpenStreetMap ohne Terrain und 3D-Gebäude.
 

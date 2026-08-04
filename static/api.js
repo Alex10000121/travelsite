@@ -1,6 +1,8 @@
 // Alle fetch-Aufrufe zum Backend.
 // Jede Funktion wirft bei Fehler einen Error — kein fetch() außerhalb dieser Datei.
 
+import { encodeFilenamePath } from './filename-utils.js';
+
 /**
  * Lädt Reisestatistiken (km, Länder, Tage, Fotos) – leichtgewichtig, schnell.
  * @param {string} token
@@ -137,7 +139,7 @@ export async function fetchAdminPhotos({ q = '', offset = 0 } = {}) {
 export async function deletePhoto(filename) {
     let res;
     try {
-        res = await fetch(`/api/admin/photos/${filename}`, { method: 'DELETE' });
+        res = await fetch(`/api/admin/photos/${encodeFilenamePath(filename)}`, { method: 'DELETE' });
     } catch (err) {
         throw new Error(`Netzwerkfehler beim Löschen: ${err.message}`);
     }

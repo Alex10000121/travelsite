@@ -1,5 +1,12 @@
 import os
 import pytest
+
+# Muss vor dem ersten "import app" gesetzt sein - app.py bricht ohne diese
+# Variablen jetzt bewusst mit RuntimeError ab (siehe app._require_env).
+os.environ.setdefault('SECRET_KEY', 'test-secret-key-not-for-production')
+os.environ.setdefault('ADMIN_TOKEN', 'test_admin')
+os.environ.setdefault('ACCESS_TOKEN', 'test_token')
+
 import app as flask_module
 from app import app as flask_app, init_db
 

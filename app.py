@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from flask import Flask, render_template, request, jsonify, send_file, make_response, abort, session, redirect, url_for
 from flask_compress import Compress
@@ -32,6 +35,11 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 Compress(app)
 
+# Nur ueber FLASK_DEBUG=1 aktivierbar (siehe .env) - steuert sowohl den
+# Werkzeug-Reloader/Debugger (app.run unten) als auch SESSION_COOKIE_SECURE,
+# da Cookies mit Secure-Flag beim lokalen Test ueber http sonst nicht ankommen.
+app.debug = os.environ.get('FLASK_DEBUG', '0') == '1'
+
 
 @app.after_request
 def no_cache_static(response):
@@ -41,6 +49,14 @@ def no_cache_static(response):
     # und neue Versionen gemischt geladen werden und das Frontend bricht.
     if request.path.startswith('/static/'):
         response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
+@app.after_request
+def security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     return response
 
 
@@ -55,26 +71,52 @@ limiter = Limiter(
 def ratelimit_handler(e):
     return jsonify(error="Zu viele Anfragen. Bitte warte eine Minute und versuche es erneut."), 429
 
+def _require_env(name):
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(
+            f"Umgebungsvariable {name} ist nicht gesetzt. Ohne eigenes Secret wuerde die App "
+            f"mit einem unsicheren, oeffentlich bekannten Standardwert starten. Setze {name} "
+            f"in der .env-Datei oder als Umgebungsvariable des Deployments."
+        )
+    return value
+
+
 # Konfiguration
 CONFIG = {
     'PHOTO_DIR': os.environ.get('PHOTO_DIR', './photos'),
     'THUMB_DIR': os.environ.get('THUMB_DIR', './data/thumbs'),
     'DB_PATH': os.environ.get('DB_PATH', './data/trips.db'),
-    'ACCESS_TOKEN': os.environ.get('ACCESS_TOKEN', 'geheim123'),
-    'ADMIN_TOKEN': os.environ.get('ADMIN_TOKEN', 'admin_geheim'),
+    'ACCESS_TOKEN': _require_env('ACCESS_TOKEN'),
+    'ADMIN_TOKEN': _require_env('ADMIN_TOKEN'),
     'CONTACT_EMAIL': os.environ.get('CONTACT_EMAIL', 'deine.email@beispiel.de'),
     'MAPTILER_API_KEY': os.environ.get('MAPTILER_API_KEY', '')
 }
 
-# Ohne festen SECRET_KEY würde jeder gunicorn-Worker seinen eigenen erzeugen und
-# Sessions je nachdem, welcher Worker die Anfrage bekommt, zufällig invalidieren.
-# Fallback ist deshalb vom (über alle Worker gleichen) ADMIN_TOKEN abgeleitet statt zufällig.
-app.secret_key = os.environ.get('SECRET_KEY') or hashlib.sha256(CONFIG['ADMIN_TOKEN'].encode()).hexdigest()
+# Muss ein eigenstaendiges, zufaelliges Secret sein - ein von ADMIN_TOKEN abgeleiteter
+# Schluessel waere ein Offline-Orakel, mit dem sich das Admin-Passwort aus einem
+# abgefangenen Session-Cookie zurückrechnen liesse.
+app.secret_key = _require_env('SECRET_KEY')
+
+app.config.update(
+    SESSION_COOKIE_SECURE=not app.debug,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+    MAX_CONTENT_LENGTH=32 * 1024 * 1024,  # 32 MB - reicht fuer Handy-/Kamerafotos, verhindert Speicher-DoS
+)
+
+
+@app.errorhandler(413)
+def file_too_large(e):
+    return jsonify(error="Datei zu gross (max. 32 MB)."), 413
+
 
 SUPPORTED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heic')
 
 os.makedirs(CONFIG['THUMB_DIR'], exist_ok=True)
-os.makedirs(os.path.dirname(CONFIG['DB_PATH']), exist_ok=True)
+_db_dir = os.path.dirname(CONFIG['DB_PATH'])
+if _db_dir:
+    os.makedirs(_db_dir, exist_ok=True)
 
 
 # --- HELFER FUNKTIONEN ---
@@ -230,9 +272,16 @@ def fetch_missing_routes(missing_pairs):
 
 
 def _thumb_path(filename, suffix=''):
+    has_subdir = '/' in filename or '\\' in filename
     flat_name = filename.replace('/', '_').replace('\\', '_')
     if flat_name.lower().endswith('.jpg'):
         flat_name = flat_name[:-4]
+    if has_subdir:
+        # Ohne Disambiguierung wuerden z.B. "a/b.jpg" und "a_b.jpg" auf denselben
+        # Thumb-Namen abbilden - zwei verschiedene Fotos teilen sich dann ein Thumbnail
+        # und ein "delete" fuer das eine loescht auch das Thumb des anderen mit.
+        digest = hashlib.sha1(filename.encode('utf-8')).hexdigest()[:8]
+        flat_name = f"{flat_name}_{digest}"
     return os.path.join(CONFIG['THUMB_DIR'], f"{flat_name}{suffix}.jpg")
 
 
@@ -363,6 +412,10 @@ def index_photo(full_path, abs_photo_dir):
     norm = full_path.replace('\\', '/')
     if '@eaDir' in norm or '/no_gps/' in norm or norm.endswith('/no_gps'):
         return
+    if os.path.basename(full_path).startswith('.'):
+        # Staging-Dateien von /api/upload (siehe dort) - werden erst nach
+        # vollstaendiger Verarbeitung ohne Punkt-Praefix eingeblendet.
+        return
     if not full_path.lower().endswith(SUPPORTED_EXTENSIONS):
         return
 
@@ -384,15 +437,22 @@ def index_photo(full_path, abs_photo_dir):
                 no_gps_dir = os.path.join(abs_photo_dir, 'no_gps')
                 os.makedirs(no_gps_dir, exist_ok=True)
                 dest = os.path.join(no_gps_dir, os.path.basename(full_path))
+                if os.path.exists(dest):
+                    # Gleichnamige Datei liegt schon in no_gps/ - nicht stillschweigend
+                    # überschreiben, sondern mit eindeutigem Suffix daneben ablegen.
+                    base, ext = os.path.splitext(os.path.basename(full_path))
+                    dest = os.path.join(no_gps_dir, f"{base}_{secrets.token_hex(4)}{ext}")
                 os.replace(full_path, dest)
-                logger.info(f"Moved to no_gps: {os.path.basename(full_path)}")
+                logger.info(f"Moved to no_gps: {os.path.basename(dest)}")
                 return
 
             lat, lon = coords
             loc = get_location_name(lat, lon)
             final_ts = timestamp or os.path.getmtime(full_path)
 
-            generate_thumbnails(full_path, thumb_path, blur_thumb_path)
+            if not generate_thumbnails(full_path, thumb_path, blur_thumb_path):
+                logger.error(f"Skipping index (thumbnail generation failed): {full_path}")
+                return
 
             cursor = conn.execute(
                 "INSERT OR IGNORE INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
@@ -471,7 +531,7 @@ def admin_required(f):
 
 
 @app.route('/')
-@limiter.limit("5 per minute")
+@limiter.limit("20 per minute")
 def index():
     token = request.args.get('token')
     if token and secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']):
@@ -489,9 +549,12 @@ def admin_dashboard():
 @app.route('/admin/login', methods=['POST'])
 @limiter.limit("5 per minute")
 def admin_login():
-    data = request.json or {}
-    if secrets.compare_digest(data.get('admin_token', ''), CONFIG['ADMIN_TOKEN']):
+    data = request.get_json(silent=True) or {}
+    token = data.get('admin_token', '')
+    if isinstance(token, str) and secrets.compare_digest(token, CONFIG['ADMIN_TOKEN']):
+        session.clear()
         session['is_admin'] = True
+        session.permanent = True
         return jsonify({'success': True})
     return jsonify({'error': 'Falsches Passwort'}), 403
 
@@ -503,6 +566,7 @@ def admin_logout():
 
 
 @app.route('/api/stats')
+@limiter.limit("30 per minute")
 def api_stats():
     token = request.args.get('token', '')
     if not secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']): abort(403)
@@ -551,6 +615,7 @@ def api_stats():
 
 
 @app.route('/api/route')
+@limiter.limit("30 per minute")
 def api_route():
     token = request.args.get('token', '')
     if not secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']): abort(403)
@@ -652,6 +717,15 @@ def _ensure_large_thumbnail(original_path, large_thumb_path):
         return False
 
 
+def _is_within_dir(base_dir, target_path):
+    """os.path.commonpath wirft ValueError bei Pfaden auf verschiedenen Windows-Laufwerken
+    (z.B. Junction/Netzlaufwerk als PHOTO_DIR) - dann ist der Pfad ausserhalb, kein Serverfehler."""
+    try:
+        return os.path.commonpath([base_dir, target_path]) == base_dir
+    except ValueError:
+        return False
+
+
 @app.route('/api/thumb/<path:filename>')
 def api_thumb(filename):
     token = request.args.get('token', '')
@@ -659,7 +733,7 @@ def api_thumb(filename):
 
     base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
     requested_path = os.path.abspath(os.path.join(base_dir, filename))
-    if not os.path.commonpath([base_dir, requested_path]) == base_dir: abort(403)
+    if not _is_within_dir(base_dir, requested_path): abort(403)
 
     size = request.args.get('size')
 
@@ -689,6 +763,8 @@ def upload_photo():
     if 'photo' not in request.files: return jsonify({'error': 'No file'}), 400
     file = request.files['photo']
     if file.filename == '': return jsonify({'error': 'Empty filename'}), 400
+    if not file.filename.lower().endswith(SUPPORTED_EXTENSIONS):
+        return jsonify({'error': 'Nicht unterstuetztes Dateiformat.'}), 400
 
     # Parse form-supplied coordinates (sent by client when EXIF GPS is missing)
     form_coords = None
@@ -704,8 +780,12 @@ def upload_photo():
 
     try:
         filename = secure_filename(file.filename)
-        unique_name = f"{int(time.time())}_{filename}"
-        save_path = os.path.join(CONFIG['PHOTO_DIR'], unique_name)
+        unique_name = f"{int(time.time())}_{secrets.token_hex(4)}_{filename}"
+        final_path = os.path.join(CONFIG['PHOTO_DIR'], unique_name)
+        # Punkt-Praefix: der Watchdog-Scanner ignoriert Dateien, deren Name damit
+        # beginnt (siehe index_photo), damit er die Datei nicht parallel zu diesem
+        # Handler halbfertig einliest und faelschlich nach no_gps/ verschiebt.
+        save_path = os.path.join(CONFIG['PHOTO_DIR'], f".upload_{unique_name}")
 
         file.save(save_path)
 
@@ -745,7 +825,10 @@ def upload_photo():
         if loc == "Unbekannt":
             loc = f"{lat:.2f}, {lon:.2f}"
 
-        generate_thumbnails(save_path, thumb_path, blur_thumb_path)
+        if not generate_thumbnails(save_path, thumb_path, blur_thumb_path):
+            os.remove(save_path)
+            return jsonify({'error': 'Foto konnte nicht verarbeitet werden (ungueltiges Bildformat?).'}), 400
+
         final_ts = ts or time.time()
 
         with get_db() as conn:
@@ -754,25 +837,36 @@ def upload_photo():
                 (unique_name, lat, lon, final_ts, loc)
             )
 
+        os.replace(save_path, final_path)
+
         return jsonify({'success': True, 'file': unique_name, 'location': loc,
                         'missing_gps': False, 'lat': lat, 'lon': lon, 'timestamp': final_ts})
 
     except Exception as e:
         if 'save_path' in locals() and os.path.exists(save_path): os.remove(save_path)
         logger.error(f"Upload error: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Upload fehlgeschlagen.'}), 500
 
 
 @app.route('/api/update_location', methods=['POST'])
 @admin_required
 def update_location():
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     filename = data.get('filename')
     lat = data.get('lat')
     lon = data.get('lon')
 
     if not filename or lat is None or lon is None:
         return jsonify({'error': 'Daten fehlen'}), 400
+
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'lat/lon muessen Zahlen sein'}), 400
+
+    if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
+        return jsonify({'error': 'lat/lon ausserhalb des gueltigen Bereichs'}), 400
 
     try:
         new_loc = get_location_name(lat, lon)
@@ -789,7 +883,7 @@ def update_location():
 
     except Exception as e:
         logger.error(f"Update location error: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Ort konnte nicht gespeichert werden.'}), 500
 
 
 ADMIN_PHOTOS_PAGE_SIZE = 60
@@ -838,7 +932,7 @@ def admin_list_photos():
 def admin_delete_photo(filename):
     base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
     requested_path = os.path.abspath(os.path.join(base_dir, filename))
-    if not os.path.commonpath([base_dir, requested_path]) == base_dir:
+    if not _is_within_dir(base_dir, requested_path):
         abort(403)
 
     try:
@@ -855,7 +949,7 @@ def admin_delete_photo(filename):
 
     except Exception as e:
         logger.error(f"Delete photo error: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Foto konnte nicht geloescht werden.'}), 500
 
 
 VISITOR_HISTORY_DAYS = 30
@@ -912,4 +1006,4 @@ def start_background_services():
 if __name__ == '__main__':
     print("Starting local...", flush=True)
     start_background_services()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=app.debug)

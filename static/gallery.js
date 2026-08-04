@@ -1,6 +1,8 @@
 // Foto-Anzeige, Navigation, Swipe-Gesten und Tastatur-Events.
 // Keine Abhängigkeit zu Leaflet oder API.
 
+import { encodeFilenamePath } from './filename-utils.js';
+
 export class GalleryController {
 
     /**
@@ -168,7 +170,7 @@ export class GalleryController {
      */
     _displayImage(filename) {
         const { currentPhoto: imgEl, bgPhoto: bgEl } = this._dom;
-        const url     = `/api/thumb/${filename}?token=${this._token}`;
+        const url     = `/api/thumb/${encodeFilenamePath(filename)}?token=${this._token}`;
         const blurUrl = `${url}&size=blur`;
 
         if (imgEl) {
@@ -256,7 +258,7 @@ export class GalleryController {
             } else {
                 const photo = this.currentPhoto;
                 if (photo) {
-                    imgEl.src = `/api/thumb/${photo.filename}?token=${this._token}&size=large`;
+                    imgEl.src = `/api/thumb/${encodeFilenamePath(photo.filename)}?token=${this._token}&size=large`;
                 }
                 imgEl.classList.add('is-fullscreen');
             }
@@ -284,7 +286,7 @@ export class GalleryController {
             btn.setAttribute('aria-label', photo.location || `Foto ${i + 1}`);
 
             const img = document.createElement('img');
-            img.src = `/api/thumb/${photo.filename}?token=${this._token}&size=blur`;
+            img.src = `/api/thumb/${encodeFilenamePath(photo.filename)}?token=${this._token}&size=blur`;
             img.loading = 'lazy';
             img.alt = '';
 
