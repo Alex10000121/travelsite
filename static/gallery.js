@@ -18,7 +18,6 @@ export class GalleryController {
 
         this._photos       = [];
         this._currentIndex = 0;
-        this._isFixingMode = false;
         this._displayTimer = null;
 
         /** @type {function(index: number, photo: object): void} */
@@ -63,7 +62,7 @@ export class GalleryController {
      * @param {number} index
      */
     setIndex(index) {
-        if (!this._photos.length || this._isFixingMode) return;
+        if (!this._photos.length) return;
         this._currentIndex = index;
         this._update();
     }
@@ -75,17 +74,6 @@ export class GalleryController {
     get currentPhoto() { return this._photos[this._currentIndex] ?? null; }
 
     // -------------------------------------------------------------------------
-    // Fix-Modus (GPS-Assistent blockiert Navigation)
-    // -------------------------------------------------------------------------
-
-    /**
-     * @param {boolean} active
-     */
-    setFixingMode(active) {
-        this._isFixingMode = active;
-    }
-
-    // -------------------------------------------------------------------------
     // Navigation
     // -------------------------------------------------------------------------
 
@@ -94,7 +82,7 @@ export class GalleryController {
      * @param {number} direction  +1 oder -1
      */
     changePhoto(direction) {
-        if (!this._photos.length || this._isFixingMode) return;
+        if (!this._photos.length) return;
         const total = this._photos.length;
         this._currentIndex = (this._currentIndex + direction + total) % total;
         this._update();
@@ -105,7 +93,7 @@ export class GalleryController {
      * @param {number} direction  +1 oder -1
      */
     changeLocation(direction) {
-        if (!this._photos.length || this._isFixingMode) return;
+        if (!this._photos.length) return;
 
         const photos = this._photos;
         const total  = photos.length;
@@ -168,10 +156,8 @@ export class GalleryController {
         this._displayImage(photo.filename);
         this._syncFilmstripActive();
 
-        if (!this._isFixingMode) {
-            this._setText(this._dom.txtLocation, photo.location || 'Unbekannt');
-            this._setText(this._dom.txtDate, photo.date_str || 'Datum unbekannt');
-        }
+        this._setText(this._dom.txtLocation, photo.location || 'Unbekannt');
+        this._setText(this._dom.txtDate, photo.date_str || 'Datum unbekannt');
 
         this._onPhotoChange?.(this._currentIndex, photo);
     }
@@ -226,7 +212,6 @@ export class GalleryController {
 
     _bindKeyboard() {
         document.addEventListener('keydown', (e) => {
-            if (this._isFixingMode) return;
             if (e.key === 'ArrowLeft')  this.changePhoto(-1);
             if (e.key === 'ArrowRight') this.changePhoto(1);
             if (e.key === 'ArrowUp')   { e.preventDefault(); this.changeLocation(-1); }
@@ -249,7 +234,7 @@ export class GalleryController {
         }, { passive: false });
 
         zone.addEventListener('touchend', (e) => {
-            if (this._isFixingMode || startedInFilmstrip) return;
+            if (startedInFilmstrip) return;
             const xDiff = e.changedTouches[0].screenX - tX;
             const yDiff = e.changedTouches[0].screenY - tY;
 
@@ -266,8 +251,6 @@ export class GalleryController {
         if (!imgEl) return;
 
         imgEl.addEventListener('click', () => {
-            if (this._isFixingMode) return;
-
             if (imgEl.classList.contains('is-fullscreen')) {
                 imgEl.classList.remove('is-fullscreen');
             } else {

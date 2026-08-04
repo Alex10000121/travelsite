@@ -129,11 +129,11 @@ DB_PATH=./data/trips.db
 
 ### Admin-Funktionen
 
-Der Admin-Bereich ist versteckt und wird durch einen Doppelklick auf den Statistik-Button (oben rechts) geöffnet. Nach Eingabe des `ADMIN_TOKEN` stehen folgende Funktionen zur Verfügung:
+Der Admin-Bereich liegt unter `/admin` und ist durch eine eigene Anmeldung mit dem `ADMIN_TOKEN` geschützt (serverseitige Session, kein Query-Token wie bei der Galerie). Aktuell verfügbar:
 
-- **Fotos hochladen** – direkt über den Browser, auch mehrere gleichzeitig
-- **GPS-Koordinaten korrigieren** – für Fotos ohne EXIF-Standort
-- **Fotos löschen** – entfernt Original, Thumbnail und DB-Eintrag
+- **Fotos hochladen** – direkt über den Browser, auch mehrere gleichzeitig; fehlt einem Foto das EXIF-GPS, kann der Ort über eine eingebettete Karte gesetzt werden
+
+Weitere Funktionen (z. B. GPS-Korrektur bestehender Fotos) werden als zusätzliche Karten auf derselben Seite ergänzt.
 
 ---
 
@@ -147,13 +147,16 @@ travelsite/
 ├── templates/
 │   ├── base.html           # HTML-Grundgerüst
 │   ├── index.html          # Hauptanwendung
-│   └── login.html          # Token-Eingabeseite
+│   ├── login.html          # Token-Eingabeseite
+│   └── admin.html          # /admin: Login-Formular bzw. Feature-Dashboard
 ├── static/
-│   ├── main.js             # Einstiegspunkt, verdrahtet alle Module
+│   ├── main.js             # Einstiegspunkt der Galerie, verdrahtet alle Module
 │   ├── map.js              # MapLibre-Kartencontroller (3D, Cluster, Routing)
 │   ├── api.js              # Alle fetch-Aufrufe zum Backend
 │   ├── gallery.js          # Galerie- und Swipe-Logik
-│   ├── admin.js            # Upload-, Lösch- und GPS-Fix-Logik
+│   ├── admin-login.js      # Login-Formular auf /admin
+│   ├── admin-upload.js     # Upload-Feature (Karte für /admin)
+│   ├── admin-main.js       # Einstiegspunkt der /admin-Ansicht
 │   └── style.css           # Dark-Mode Design
 └── tests/
     ├── test_api.py         # Flask-Integrationstests

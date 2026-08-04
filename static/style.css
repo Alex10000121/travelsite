@@ -323,9 +323,58 @@ body, html {
 .icon-circle { width: 60px; height: 60px; margin: 0 auto 20px; background: rgba(255,255,255,0.05); border-radius: 50%; display: flex; justify-content: center; align-items: center; color: var(--accent-color); }
 .contact-btn { display: inline-block; text-decoration: none; width: 100%; padding: 15px; border-radius: 8px; background: var(--accent-color); color: white; font-weight: 600; box-sizing: border-box; }
 
+.admin-password-input { width: 100%; padding: 12px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #444; background: #222; color: white; font-size: 1rem; }
+.admin-login-error { color: #f87171; font-size: 0.85rem; margin: -10px 0 15px; }
 
 /* =========================================
-   8. MOBILE OPTIMIZATION
+   8. ADMIN DASHBOARD (/admin)
+   ========================================= */
+body.admin-page { overflow-y: auto; }
+
+.admin-container { max-width: 900px; margin: 0 auto; padding: 30px 20px 60px; }
+
+.admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+.admin-header h1 { margin: 0; font-size: 1.6rem; }
+.admin-logout-btn { background: rgba(255,255,255,0.08); color: var(--text-main); border: 1px solid rgba(255,255,255,0.15); padding: 10px 20px; border-radius: 30px; cursor: pointer; font-size: 0.9rem; }
+.admin-logout-btn:hover { background: rgba(255,255,255,0.15); }
+
+.admin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+
+.admin-card { background: var(--panel-color); border-radius: var(--radius); padding: 25px; border: 1px solid rgba(255,255,255,0.05); }
+.admin-card h2 { margin: 0 0 18px; font-size: 1.1rem; }
+
+.admin-upload-drop { text-align: center; padding: 20px; border: 2px dashed rgba(255,255,255,0.15); border-radius: 14px; }
+.admin-hint { color: var(--text-muted); font-size: 0.85rem; margin-top: 10px; text-align: center; }
+
+.admin-gps-picker { margin-top: 18px; }
+.admin-gps-warning { color: #f87171; font-weight: 600; font-size: 0.9rem; margin-bottom: 10px; }
+#admin-map { width: 100%; height: 280px; border-radius: 14px; overflow: hidden; }
+
+.admin-progress { margin-top: 18px; }
+
+.admin-upload-log { list-style: none; margin: 18px 0 0; padding: 0; max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.admin-upload-log li { padding: 8px 12px; border-radius: 10px; background: rgba(255,255,255,0.05); font-size: 0.85rem; }
+.admin-log-ok { color: #86efac; }
+.admin-log-error { color: #f87171; }
+
+.admin-photo-list { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.admin-photo-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.05); }
+.admin-photo-item img { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; }
+.admin-photo-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.admin-photo-location { font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-photo-date { font-size: 0.75rem; color: var(--text-muted); }
+.admin-photo-actions { display: flex; gap: 6px; flex: 0 0 auto; }
+.admin-fix-btn, .admin-delete-btn { border: none; border-radius: 8px; padding: 8px 10px; font-size: 0.8rem; cursor: pointer; color: white; }
+.admin-fix-btn { background: var(--accent-color); }
+.admin-fix-btn:hover { background: var(--accent-hover); }
+.admin-delete-btn { background: #7f1d1d; }
+.admin-delete-btn:hover { background: #991b1b; }
+
+#admin-fix-modal .modal-content { max-width: 600px; }
+#admin-fix-map { width: 100%; height: 320px; border-radius: 14px; overflow: hidden; margin: 18px 0; }
+
+/* =========================================
+   9. MOBILE OPTIMIZATION
    ========================================= */
 @media (max-width: 768px) {
     /* Layout Switch zu vertikal */

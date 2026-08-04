@@ -55,19 +55,41 @@ class TestApiStats:
         assert data['total_km'] == 0
 
 
-class TestCheckLogin:
-    def test_valid_admin_token(self, client):
-        response = client.post('/api/check_login',
+class TestAdminDashboard:
+    def test_logged_out_shows_login_form(self, client):
+        response = client.get('/admin')
+        assert response.status_code == 200
+        assert b'admin-login-form' in response.data
+
+    def test_logged_in_shows_dashboard(self, admin_client):
+        response = admin_client.get('/admin')
+        assert response.status_code == 200
+        assert b'admin-upload-log' in response.data
+
+
+class TestAdminLogin:
+    def test_valid_admin_token_sets_session(self, client):
+        response = client.post('/admin/login',
                                data=json.dumps({'admin_token': 'test_admin'}),
                                content_type='application/json')
         assert response.status_code == 200
         assert response.get_json()['success'] is True
 
-    def test_invalid_admin_token(self, client):
-        response = client.post('/api/check_login',
+        dashboard = client.get('/admin')
+        assert b'admin-upload-log' in dashboard.data
+
+    def test_invalid_admin_token_returns_403(self, client):
+        response = client.post('/admin/login',
                                data=json.dumps({'admin_token': 'wrong'}),
                                content_type='application/json')
         assert response.status_code == 403
+
+
+class TestAdminLogout:
+    def test_logout_clears_session(self, admin_client):
+        admin_client.post('/admin/logout')
+        response = admin_client.get('/admin')
+        assert b'admin-login-form' in response.data
 
 
 class TestUploadPhoto:
@@ -78,22 +100,18 @@ class TestUploadPhoto:
         buf.seek(0)
         return buf
 
-    def test_missing_admin_token_returns_403(self, client):
+    def test_without_admin_session_returns_403(self, client):
         response = client.post('/api/upload', data={
-            'admin_token': 'wrong',
             'photo': (self._make_jpeg_bytes(), 'test.jpg')
         }, content_type='multipart/form-data')
         assert response.status_code == 403
 
-    def test_no_file_returns_400(self, client):
-        response = client.post('/api/upload', data={
-            'admin_token': 'test_admin'
-        }, content_type='multipart/form-data')
+    def test_no_file_returns_400(self, admin_client):
+        response = admin_client.post('/api/upload', data={}, content_type='multipart/form-data')
         assert response.status_code == 400
 
-    def test_valid_upload_returns_success(self, client):
-        response = client.post('/api/upload', data={
-            'admin_token': 'test_admin',
+    def test_valid_upload_returns_success(self, admin_client):
+        response = admin_client.post('/api/upload', data={
             'photo': (self._make_jpeg_bytes(), 'test.jpg'),
             'lat': '48.8566',
             'lon': '2.3522',
@@ -103,9 +121,8 @@ class TestUploadPhoto:
         assert data['success'] is True
         assert 'file' in data
 
-    def test_upload_response_contains_location_field(self, client):
-        response = client.post('/api/upload', data={
-            'admin_token': 'test_admin',
+    def test_upload_response_contains_location_field(self, admin_client):
+        response = admin_client.post('/api/upload', data={
             'photo': (self._make_jpeg_bytes(), 'test.jpg'),
             'lat': '48.8566',
             'lon': '2.3522',
@@ -113,9 +130,8 @@ class TestUploadPhoto:
         assert response.status_code == 200
         assert 'location' in response.get_json()
 
-    def test_upload_response_contains_missing_gps_field(self, client):
-        response = client.post('/api/upload', data={
-            'admin_token': 'test_admin',
+    def test_upload_response_contains_missing_gps_field(self, admin_client):
+        response = admin_client.post('/api/upload', data={
             'photo': (self._make_jpeg_bytes(), 'test.jpg')
         }, content_type='multipart/form-data')
         data = response.get_json()
@@ -131,22 +147,20 @@ class TestUploadWithFormCoords:
         buf.seek(0)
         return buf
 
-    def test_piexif_insert_not_called_without_coords(self, client):
+    def test_piexif_insert_not_called_without_coords(self, admin_client):
         with patch('piexif.insert') as mock_insert:
-            client.post('/api/upload', data={
-                'admin_token': 'test_admin',
+            admin_client.post('/api/upload', data={
                 'photo': (self._make_jpeg_bytes(), 'no_coords.jpg'),
             }, content_type='multipart/form-data')
 
             mock_insert.assert_not_called()
 
-    def test_piexif_load_failure_is_silently_handled(self, client):
+    def test_piexif_load_failure_is_silently_handled(self, admin_client):
         with patch('piexif.load', side_effect=Exception('invalid')), \
              patch('piexif.dump', return_value=b'exif'), \
              patch('piexif.insert'):
 
-            response = client.post('/api/upload', data={
-                'admin_token': 'test_admin',
+            response = admin_client.post('/api/upload', data={
                 'photo': (self._make_jpeg_bytes(), 'bad_exif.jpg'),
                 'lat': '48.8566',
                 'lon': '2.3522',
@@ -163,7 +177,7 @@ class TestUploadIdempotency:
         buf.seek(0)
         return buf
 
-    def test_duplicate_filename_in_db_does_not_crash_upload(self, client, app):
+    def test_duplicate_filename_in_db_does_not_crash_upload(self, admin_client, app):
         import app as flask_module
         from app import get_db
         with get_db() as conn:
@@ -173,8 +187,7 @@ class TestUploadIdempotency:
             )
             conn.commit()
 
-        response = client.post('/api/upload', data={
-            'admin_token': 'test_admin',
+        response = admin_client.post('/api/upload', data={
             'photo': (self._make_jpeg_bytes(), 'duplicate.jpg'),
             'lat': '48.0',
             'lon': '11.0',
@@ -208,7 +221,7 @@ class TestUploadResponseFields:
         buf.seek(0)
         return buf
 
-    def test_upload_response_contains_lat_lon(self, client, tmp_path):
+    def test_upload_response_contains_lat_lon(self, admin_client, tmp_path):
         import piexif
         from PIL import Image
         from app import decimal_to_dms_rational
@@ -230,8 +243,7 @@ class TestUploadResponseFields:
         img.save(jpeg_with_gps, format='JPEG', exif=exif_bytes)
         jpeg_with_gps.seek(0)
 
-        response = client.post('/api/upload', data={
-            'admin_token': 'test_admin',
+        response = admin_client.post('/api/upload', data={
             'photo': (jpeg_with_gps, 'with_gps.jpg'),
         }, content_type='multipart/form-data')
 
@@ -242,11 +254,10 @@ class TestUploadResponseFields:
         assert abs(data['lat'] - 48.8566) < 0.01
         assert abs(data['lon'] - 2.3522) < 0.01
 
-    def test_thumbnail_name_matches_serve_and_delete_path(self, client, app):
+    def test_thumbnail_name_matches_serve_and_delete_path(self, admin_client, app):
         import app as flask_module
         import os
-        response = client.post('/api/upload', data={
-            'admin_token': 'test_admin',
+        response = admin_client.post('/api/upload', data={
             'photo': (self._make_jpeg_bytes(), 'mytrip.jpg'),
             'lat': '48.8566',
             'lon': '2.3522',
@@ -261,9 +272,8 @@ class TestUploadResponseFields:
         assert os.path.exists(expected_thumb), "Thumbnail fehlt unter erwartetem Pfad"
         assert not os.path.exists(double_ext_thumb), "Thumbnail doppelt mit .jpg.jpg angelegt"
 
-    def test_upload_without_gps_returns_400(self, client):
-        response = client.post('/api/upload', data={
-            'admin_token': 'test_admin',
+    def test_upload_without_gps_returns_400(self, admin_client):
+        response = admin_client.post('/api/upload', data={
             'photo': (self._make_jpeg_bytes(), 'no_gps.jpg'),
         }, content_type='multipart/form-data')
 
@@ -280,9 +290,8 @@ class TestApiThumbLarge:
         buf.seek(0)
         return buf
 
-    def _upload(self, client):
-        response = client.post('/api/upload', data={
-            'admin_token': 'test_admin',
+    def _upload(self, admin_client):
+        response = admin_client.post('/api/upload', data={
             'photo': (self._make_jpeg_bytes(), 'fullscreen.jpg'),
             'lat': '48.8566',
             'lon': '2.3522',
@@ -290,30 +299,30 @@ class TestApiThumbLarge:
         assert response.status_code == 200
         return response.get_json()['file']
 
-    def test_large_size_returns_200(self, client):
-        uploaded_file = self._upload(client)
-        response = client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
+    def test_large_size_returns_200(self, admin_client):
+        uploaded_file = self._upload(admin_client)
+        response = admin_client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
         assert response.status_code == 200
 
-    def test_large_size_creates_dedicated_thumb_file(self, client, app):
+    def test_large_size_creates_dedicated_thumb_file(self, admin_client, app):
         import app as flask_module
-        uploaded_file = self._upload(client)
-        client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
+        uploaded_file = self._upload(admin_client)
+        admin_client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
 
         thumb_dir = flask_module.CONFIG['THUMB_DIR']
         large_thumb_path = os.path.join(thumb_dir, uploaded_file[:-4] + '_lg.jpg')
         assert os.path.exists(large_thumb_path)
 
-    def test_large_size_is_cached_not_regenerated_on_second_request(self, client, app):
+    def test_large_size_is_cached_not_regenerated_on_second_request(self, admin_client, app):
         import app as flask_module
-        uploaded_file = self._upload(client)
-        client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
+        uploaded_file = self._upload(admin_client)
+        admin_client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
 
         thumb_dir = flask_module.CONFIG['THUMB_DIR']
         large_thumb_path = os.path.join(thumb_dir, uploaded_file[:-4] + '_lg.jpg')
         first_mtime = os.path.getmtime(large_thumb_path)
 
-        client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
+        admin_client.get(f'/api/thumb/{uploaded_file}?token=test_token&size=large')
         assert os.path.getmtime(large_thumb_path) == first_mtime
 
     def test_invalid_token_returns_403(self, client):
@@ -322,27 +331,198 @@ class TestApiThumbLarge:
 
 
 class TestUpdateLocation:
-    def test_invalid_token_returns_403(self, client):
+    def test_without_admin_session_returns_403(self, client):
         response = client.post('/api/update_location',
-                               data=json.dumps({'admin_token': 'wrong', 'filename': 'x.jpg', 'lat': 48.0, 'lon': 11.0}),
+                               data=json.dumps({'filename': 'x.jpg', 'lat': 48.0, 'lon': 11.0}),
                                content_type='application/json')
         assert response.status_code == 403
 
-    def test_missing_data_returns_400(self, client):
-        response = client.post('/api/update_location',
-                               data=json.dumps({'admin_token': 'test_admin'}),
-                               content_type='application/json')
+    def test_missing_data_returns_400(self, admin_client):
+        response = admin_client.post('/api/update_location',
+                                     data=json.dumps({}),
+                                     content_type='application/json')
         assert response.status_code == 400
 
-    def test_valid_update(self, client):
-        response = client.post('/api/update_location',
-                               data=json.dumps({
-                                   'admin_token': 'test_admin',
-                                   'filename': 'nonexistent.jpg',
-                                   'lat': 48.1351,
-                                   'lon': 11.5820
-                               }),
-                               content_type='application/json')
+    def test_valid_update(self, admin_client):
+        response = admin_client.post('/api/update_location',
+                                     data=json.dumps({
+                                         'filename': 'nonexistent.jpg',
+                                         'lat': 48.1351,
+                                         'lon': 11.5820
+                                     }),
+                                     content_type='application/json')
         assert response.status_code == 200
         data = response.get_json()
         assert data['success'] is True
+
+    def test_update_persists_new_coordinates_in_db(self, admin_client, app):
+        from app import get_db
+
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('to_fix.jpg', 0.0, 0.0, 1700000000.0, 'Unbekannt')
+            )
+            conn.commit()
+
+        response = admin_client.post('/api/update_location',
+                                     data=json.dumps({
+                                         'filename': 'to_fix.jpg',
+                                         'lat': 48.1351,
+                                         'lon': 11.5820
+                                     }),
+                                     content_type='application/json')
+        assert response.status_code == 200
+        assert response.get_json()['location'] != 'Unbekannt'
+
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT lat, lon, location FROM photos WHERE filename = ?", ('to_fix.jpg',)
+            ).fetchone()
+        assert abs(row['lat'] - 48.1351) < 0.0001
+        assert abs(row['lon'] - 11.5820) < 0.0001
+        assert row['location'] != 'Unbekannt'
+
+
+class TestApiThumbAdminSession:
+    def test_admin_session_without_token_returns_200(self, admin_client):
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
+        buf.seek(0)
+
+        upload = admin_client.post('/api/upload', data={
+            'photo': (buf, 'thumbtest.jpg'),
+            'lat': '48.0',
+            'lon': '11.0',
+        }, content_type='multipart/form-data')
+        filename = upload.get_json()['file']
+
+        response = admin_client.get(f'/api/thumb/{filename}')
+        assert response.status_code == 200
+
+    def test_without_session_or_token_returns_403(self, client):
+        response = client.get('/api/thumb/whatever.jpg')
+        assert response.status_code == 403
+
+
+class TestAdminPhotoList:
+    def test_without_session_returns_403(self, client):
+        response = client.get('/api/admin/photos')
+        assert response.status_code == 403
+
+    def test_returns_uploaded_photos(self, admin_client):
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
+        buf.seek(0)
+
+        admin_client.post('/api/upload', data={
+            'photo': (buf, 'listed.jpg'),
+            'lat': '48.0',
+            'lon': '11.0',
+        }, content_type='multipart/form-data')
+
+        response = admin_client.get('/api/admin/photos')
+        assert response.status_code == 200
+        filenames = [p['filename'] for p in response.get_json()['photos']]
+        assert any(f.endswith('listed.jpg') for f in filenames)
+
+
+class TestAdminDeletePhoto:
+    def _upload(self, admin_client, name='delete_me.jpg'):
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
+        buf.seek(0)
+        response = admin_client.post('/api/upload', data={
+            'photo': (buf, name),
+            'lat': '48.0',
+            'lon': '11.0',
+        }, content_type='multipart/form-data')
+        return response.get_json()['file']
+
+    def test_without_session_returns_403(self, client):
+        response = client.delete('/api/admin/photos/whatever.jpg')
+        assert response.status_code == 403
+
+    def test_deletes_file_thumb_and_db_row(self, admin_client, app):
+        import app as flask_module
+        from app import get_db
+
+        uploaded_file = self._upload(admin_client)
+
+        photo_path = os.path.join(flask_module.CONFIG['PHOTO_DIR'], uploaded_file)
+        thumb_path = os.path.join(flask_module.CONFIG['THUMB_DIR'], uploaded_file)
+        assert os.path.exists(photo_path)
+        assert os.path.exists(thumb_path)
+
+        response = admin_client.delete(f'/api/admin/photos/{uploaded_file}')
+        assert response.status_code == 200
+        assert response.get_json()['success'] is True
+
+        assert not os.path.exists(photo_path)
+        assert not os.path.exists(thumb_path)
+
+        with get_db() as conn:
+            row = conn.execute("SELECT 1 FROM photos WHERE filename=?", (uploaded_file,)).fetchone()
+        assert row is None
+
+    def test_deleting_nonexistent_photo_still_returns_success(self, admin_client):
+        response = admin_client.delete('/api/admin/photos/never_uploaded.jpg')
+        assert response.status_code == 200
+        assert response.get_json()['success'] is True
+
+    def test_deleting_photo_removes_orphaned_routes(self, admin_client, app):
+        from app import get_db
+
+        uploaded_file = self._upload(admin_client, name='route_endpoint.jpg')
+
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO routes (start_filename, end_filename, geometry) VALUES (?, ?, ?)",
+                ('other.jpg', uploaded_file, '{"type": "LineString", "coordinates": []}')
+            )
+            conn.commit()
+
+        admin_client.delete(f'/api/admin/photos/{uploaded_file}')
+
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM routes WHERE start_filename = ? OR end_filename = ?",
+                (uploaded_file, uploaded_file)
+            ).fetchone()
+        assert row is None
+
+
+class TestApiThumb:
+    def _upload(self, admin_client, name='thumb_variants.jpg'):
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
+        buf.seek(0)
+        response = admin_client.post('/api/upload', data={
+            'photo': (buf, name),
+            'lat': '48.0',
+            'lon': '11.0',
+        }, content_type='multipart/form-data')
+        return response.get_json()['file']
+
+    def test_default_size_returns_200(self, admin_client):
+        uploaded_file = self._upload(admin_client)
+        response = admin_client.get(f'/api/thumb/{uploaded_file}')
+        assert response.status_code == 200
+
+    def test_blur_size_returns_200(self, admin_client):
+        uploaded_file = self._upload(admin_client)
+        response = admin_client.get(f'/api/thumb/{uploaded_file}?size=blur')
+        assert response.status_code == 200
+
+    def test_original_size_returns_200(self, admin_client):
+        uploaded_file = self._upload(admin_client)
+        response = admin_client.get(f'/api/thumb/{uploaded_file}?size=original')
+        assert response.status_code == 200
+
+    def test_nonexistent_file_returns_404(self, admin_client):
+        response = admin_client.get('/api/thumb/does_not_exist.jpg')
+        assert response.status_code == 404

@@ -3,7 +3,7 @@
 import { fetchRoute, fetchStats } from './api.js';
 import { MapController }   from './map.js';
 import { GalleryController } from './gallery.js';
-import { AdminController } from './admin.js';
+import { createClickDispatcher } from './click-timer.js';
 
 // =============================================================================
 // 1. TOKEN
@@ -31,11 +31,6 @@ const dom = {
     galleryPanel:   document.querySelector('.gallery-panel'),
     filmstrip:      document.getElementById('filmstrip'),
 
-    // Info-Bereiche
-    infoStandard:   document.getElementById('info-standard'),
-    fixInterface:   document.getElementById('fix-interface'),
-    fixSaveBtn:     document.getElementById('fix-save-btn'),
-
     // Buttons
     btnStats:       document.getElementById('open-stats'),
     btnHelp:        document.getElementById('open-help'),
@@ -43,20 +38,10 @@ const dom = {
     statsModal:     document.getElementById('stats-modal'),
     countryList:    document.getElementById('country-list'),
     tutorialModal:  document.getElementById('tutorial-modal'),
-    loginModal:     document.getElementById('login-modal'),
-    loginForm:      document.getElementById('admin-login-form'),
-    passwordInput:  document.getElementById('admin-password-input'),
-
-    // Upload & Fortschritt
-    fileInput:      document.getElementById('file-input'),
-    progressModal:  document.getElementById('progress-modal'),
-    progressBar:    document.getElementById('progress-bar-fill'),
-    progressText:   document.getElementById('progress-text'),
 
     // Schließen-Buttons
     btnCloseStats:    document.getElementById('close-stats'),
     btnCloseTutorial: document.getElementById('close-tutorial'),
-    btnCloseLogin:    document.getElementById('close-login'),
 };
 
 // =============================================================================
@@ -78,25 +63,6 @@ const gallery = new GalleryController({
     filmstrip:    dom.filmstrip,
 }, TOKEN);
 
-const admin = new AdminController({
-    btnStats:      dom.btnStats,
-    statsModal:    dom.statsModal,
-    loginModal:    dom.loginModal,
-    loginForm:     dom.loginForm,
-    passwordInput: dom.passwordInput,
-    fileInput:     dom.fileInput,
-    progressModal: dom.progressModal,
-    progressBar:   dom.progressBar,
-    progressText:  dom.progressText,
-    infoStandard:  dom.infoStandard,
-    fixInterface:  dom.fixInterface,
-    fixSaveBtn:    dom.fixSaveBtn,
-    currentPhoto:  dom.currentPhoto,
-    bgPhoto:       dom.bgPhoto,
-    txtLocation:   dom.txtLocation,
-    txtDate:       dom.txtDate,
-}, map);
-
 // =============================================================================
 // 4. CALLBACKS VERKNÜPFEN
 // =============================================================================
@@ -109,55 +75,6 @@ gallery.onPhotoChange = (index, photo) => {
 // Karte ↔ Galerie: Marker-Klick → Galerie springt hin
 map.onMarkerClick = (index) => {
     gallery.setIndex(index);
-};
-
-// Karte ↔ Admin: Klick auf Karte → Fix-Marker setzen (wenn Admin im Picker-Modus)
-map.onMapClick = (lat, lon) => {
-    admin.handleMapClick(lat, lon);
-};
-
-// Admin ↔ Galerie: Fix-Modus blockiert Navigation
-admin.onFixingModeChange = (active) => {
-    gallery.setFixingMode(active);
-};
-
-// Admin ↔ Galerie: Fix-Assistent zeigt ein bestimmtes Bild
-admin.onShowFilename = (filename) => {
-    // Direkt Bild anzeigen ohne Navigation (internes Methoden-Äquivalent)
-    // Wir missbrauchen hier absichtlich nicht gallery.setIndex, da der Fix-Assistent
-    // Bilder ohne GPS zeigt, die keinen Marker auf der Karte haben.
-    const url     = `/api/thumb/${filename}?token=${TOKEN}`;
-    const blurUrl = `${url}&size=blur`;
-    new Image().src = url;
-    new Image().src = blurUrl;
-
-    if (dom.currentPhoto) {
-        dom.currentPhoto.style.opacity = '0';
-        setTimeout(() => {
-            dom.currentPhoto.src = url;
-            dom.currentPhoto.style.display = 'block';
-            dom.currentPhoto.onload = () => { dom.currentPhoto.style.opacity = '1'; };
-        }, 150);
-    }
-    if (dom.bgPhoto) {
-        dom.bgPhoto.style.opacity = '0';
-        setTimeout(() => {
-            dom.bgPhoto.src = blurUrl;
-            dom.bgPhoto.style.display = 'block';
-            dom.bgPhoto.onload = () => { dom.bgPhoto.style.opacity = '1'; };
-        }, 150);
-    }
-};
-
-// Admin ↔ Galerie/Karte: Nach erfolgreichem Upload neue Fotos einpflegen
-admin.onUploadComplete = (uploadedPhotos) => {
-    // Fotos zur laufenden Galerie-Instanz hinzufügen
-    const allPhotos = [...gallery._photos, ...uploadedPhotos];
-    gallery.loadPhotos(allPhotos, allPhotos.length - 1);
-
-    // Karte neu rendern (einfachster Ansatz: komplette Neuzeichnung)
-    map.renderPhotos(allPhotos);
-    map.setActiveMarker(gallery.currentIndex, gallery.currentPhoto);
 };
 
 // =============================================================================
@@ -210,18 +127,15 @@ init();
 // 7. MODAL-EVENTS (nicht modul-spezifisch)
 // =============================================================================
 
-// Stats-Modal schließen
+// Stats-Modal öffnen (Einzelklick) / Admin-Bereich öffnen (Doppelklick)
+dom.btnStats?.addEventListener('click', createClickDispatcher({
+    onSingleClick: () => dom.statsModal?.classList.add('show'),
+    onDoubleClick: () => { window.location.href = '/admin'; },
+}));
 dom.btnCloseStats?.addEventListener('click', () =>
     dom.statsModal?.classList.remove('show'));
 dom.statsModal?.addEventListener('click', (e) => {
     if (e.target === dom.statsModal) dom.statsModal.classList.remove('show');
-});
-
-// Login-Modal schließen
-dom.btnCloseLogin?.addEventListener('click', () =>
-    dom.loginModal?.classList.remove('show'));
-dom.loginModal?.addEventListener('click', (e) => {
-    if (e.target === dom.loginModal) dom.loginModal.classList.remove('show');
 });
 
 // Tutorial: beim ersten Besuch automatisch anzeigen

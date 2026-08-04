@@ -63,14 +63,6 @@ describe('changePhoto', () => {
         expect(g.currentIndex).toBe(PHOTOS.length - 1);
     });
 
-    it('macht nichts wenn der Fix-Modus aktiv ist', () => {
-        const g = makeGallery();
-        g.loadPhotos(PHOTOS, 0);
-        g.setFixingMode(true);
-        g.changePhoto(1);
-        expect(g.currentIndex).toBe(0);
-    });
-
     it('macht nichts bei leerer Fotoliste', () => {
         const g = makeGallery();
         g.changePhoto(1);
@@ -147,13 +139,6 @@ describe('changeLocation rückwärts (-1)', () => {
         expect(g.currentIndex).toBe(4); // Madrid (ES) — letztes Land
     });
 
-    it('macht nichts wenn der Fix-Modus aktiv ist', () => {
-        const g = makeGallery();
-        g.loadPhotos(PHOTOS, 2);
-        g.setFixingMode(true);
-        g.changeLocation(-1);
-        expect(g.currentIndex).toBe(2);
-    });
 });
 
 // ---------------------------------------------------------------------------
@@ -168,13 +153,6 @@ describe('setIndex', () => {
         expect(g.currentIndex).toBe(3);
     });
 
-    it('macht nichts im Fix-Modus', () => {
-        const g = makeGallery();
-        g.loadPhotos(PHOTOS, 0);
-        g.setFixingMode(true);
-        g.setIndex(3);
-        expect(g.currentIndex).toBe(0);
-    });
 });
 
 describe('loadPhotos', () => {
@@ -223,13 +201,4 @@ describe('onPhotoChange Callback', () => {
         expect(cb).toHaveBeenCalledWith(2, PHOTOS[2]);
     });
 
-    it('wird im Fix-Modus NICHT ausgelöst', () => {
-        const g = makeGallery();
-        g.loadPhotos(PHOTOS, 0);
-        g.setFixingMode(true);
-        const cb = vi.fn();
-        g.onPhotoChange = cb;
-        g.changePhoto(1);
-        expect(cb).not.toHaveBeenCalled();
-    });
 });

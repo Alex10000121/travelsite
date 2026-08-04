@@ -28,14 +28,14 @@ export async function fetchRoute(token) {
 }
 
 /**
- * Prüft, ob ein Admin-Passwort korrekt ist.
+ * Meldet sich im Admin-Bereich an (setzt bei Erfolg eine Server-Session).
  * @param {string} password - Das eingegebene Passwort
  * @returns {Promise<void>} - Löst auf bei Erfolg, wirft Error bei falschem Passwort oder Netzwerkfehler
  */
-export async function checkLogin(password) {
+export async function adminLogin(password) {
     let res;
     try {
-        res = await fetch('/api/check_login', {
+        res = await fetch('/admin/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ admin_token: password })
@@ -50,8 +50,8 @@ export async function checkLogin(password) {
 }
 
 /**
- * Lädt ein einzelnes Foto hoch.
- * @param {FormData} formData - Muss 'photo', 'admin_token' und optional 'lat'/'lon' enthalten
+ * Lädt ein einzelnes Foto hoch. Auth läuft über die Admin-Session (Cookie).
+ * @param {FormData} formData - Muss 'photo' und optional 'lat'/'lon' enthalten
  * @returns {Promise<Object>} - Die JSON-Antwort des Servers (file, lat, lon, location, timestamp, …)
  */
 export async function uploadPhoto(formData) {
@@ -79,25 +79,62 @@ export async function uploadPhoto(formData) {
 
 /**
  * Speichert nachträglich GPS-Koordinaten für ein bereits hochgeladenes Foto.
- * @param {string} password - Admin-Passwort
+ * Auth läuft über die Admin-Session (Cookie).
  * @param {string} filename - Dateiname des Fotos
  * @param {number} lat - Breitengrad
  * @param {number} lon - Längengrad
  * @returns {Promise<void>} - Löst auf bei Erfolg, wirft Error bei Misserfolg
  */
-export async function updateLocation(password, filename, lat, lon) {
+export async function updateLocation(filename, lat, lon) {
     let res;
     try {
         res = await fetch('/api/update_location', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ admin_token: password, filename, lat, lon })
+            body: JSON.stringify({ filename, lat, lon })
         });
     } catch (err) {
         throw new Error(`Netzwerkfehler beim Speichern des Ortes: ${err.message}`);
     }
 
     if (!res.ok) {
-        throw new Error(`Ort konnte nicht gespeichert werden (HTTP ${res.status}). Passwort evtl. abgelaufen?`);
+        throw new Error(`Ort konnte nicht gespeichert werden (HTTP ${res.status}). Sitzung evtl. abgelaufen?`);
+    }
+}
+
+/**
+ * Lädt alle Fotos für die Admin-Verwaltungsansicht (inkl. Ort/Datum).
+ * @returns {Promise<Array>}
+ */
+export async function fetchAdminPhotos() {
+    let res;
+    try {
+        res = await fetch('/api/admin/photos');
+    } catch (err) {
+        throw new Error('Verbindungsfehler beim Laden der Fotos.');
+    }
+
+    if (!res.ok) {
+        throw new Error(`Fotos konnten nicht geladen werden (HTTP ${res.status}).`);
+    }
+    const json = await res.json();
+    return json.photos;
+}
+
+/**
+ * Löscht ein Foto inkl. Original, Thumbnails und DB-Eintrag.
+ * @param {string} filename
+ * @returns {Promise<void>}
+ */
+export async function deletePhoto(filename) {
+    let res;
+    try {
+        res = await fetch(`/api/admin/photos/${filename}`, { method: 'DELETE' });
+    } catch (err) {
+        throw new Error(`Netzwerkfehler beim Löschen: ${err.message}`);
+    }
+
+    if (!res.ok) {
+        throw new Error(`Foto konnte nicht gelöscht werden (HTTP ${res.status}).`);
     }
 }

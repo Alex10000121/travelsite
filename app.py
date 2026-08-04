@@ -9,10 +9,11 @@ import logging
 import json
 from contextlib import contextmanager
 from datetime import datetime
+from functools import wraps
 
 import requests
 
-from flask import Flask, render_template, request, jsonify, send_file, make_response, abort
+from flask import Flask, render_template, request, jsonify, send_file, make_response, abort, session, redirect, url_for
 from flask_compress import Compress
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -64,6 +65,11 @@ CONFIG = {
     'CONTACT_EMAIL': os.environ.get('CONTACT_EMAIL', 'deine.email@beispiel.de'),
     'MAPTILER_API_KEY': os.environ.get('MAPTILER_API_KEY', '')
 }
+
+# Ohne festen SECRET_KEY würde jeder gunicorn-Worker seinen eigenen erzeugen und
+# Sessions je nachdem, welcher Worker die Anfrage bekommt, zufällig invalidieren.
+# Fallback ist deshalb vom (über alle Worker gleichen) ADMIN_TOKEN abgeleitet statt zufällig.
+app.secret_key = os.environ.get('SECRET_KEY') or hashlib.sha256(CONFIG['ADMIN_TOKEN'].encode()).hexdigest()
 
 SUPPORTED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heic')
 
@@ -447,6 +453,15 @@ def initial_scan(abs_photo_dir):
 
 # --- ROUTES ---
 
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get('is_admin'):
+            return jsonify({'error': 'Nicht angemeldet'}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
 @app.route('/')
 @limiter.limit("5 per minute")
 def index():
@@ -455,6 +470,28 @@ def index():
         return render_template('index.html', token=token, visitor_count=track_visitor_count(),
                                maptiler_key=CONFIG['MAPTILER_API_KEY'])
     return render_template('login.html', contact_email=CONFIG['CONTACT_EMAIL'])
+
+
+@app.route('/admin')
+def admin_dashboard():
+    return render_template('admin.html', logged_in=bool(session.get('is_admin')),
+                           maptiler_key=CONFIG['MAPTILER_API_KEY'])
+
+
+@app.route('/admin/login', methods=['POST'])
+@limiter.limit("5 per minute")
+def admin_login():
+    data = request.json or {}
+    if secrets.compare_digest(data.get('admin_token', ''), CONFIG['ADMIN_TOKEN']):
+        session['is_admin'] = True
+        return jsonify({'success': True})
+    return jsonify({'error': 'Falsches Passwort'}), 403
+
+
+@app.route('/admin/logout', methods=['POST'])
+def admin_logout():
+    session.pop('is_admin', None)
+    return redirect(url_for('admin_dashboard'))
 
 
 @app.route('/api/stats')
@@ -610,7 +647,7 @@ def _ensure_large_thumbnail(original_path, large_thumb_path):
 @app.route('/api/thumb/<path:filename>')
 def api_thumb(filename):
     token = request.args.get('token', '')
-    if not secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']): abort(403)
+    if not (session.get('is_admin') or secrets.compare_digest(token, CONFIG['ACCESS_TOKEN'])): abort(403)
 
     base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
     requested_path = os.path.abspath(os.path.join(base_dir, filename))
@@ -639,10 +676,8 @@ def api_thumb(filename):
 
 
 @app.route('/api/upload', methods=['POST'])
+@admin_required
 def upload_photo():
-    if not secrets.compare_digest(request.form.get('admin_token', ''), CONFIG['ADMIN_TOKEN']):
-        return jsonify({'error': 'Invalid Password'}), 403
-
     if 'photo' not in request.files: return jsonify({'error': 'No file'}), 400
     file = request.files['photo']
     if file.filename == '': return jsonify({'error': 'Empty filename'}), 400
@@ -721,11 +756,9 @@ def upload_photo():
 
 
 @app.route('/api/update_location', methods=['POST'])
+@admin_required
 def update_location():
-    data = request.json
-    if not secrets.compare_digest(data.get('admin_token', ''), CONFIG['ADMIN_TOKEN']):
-        return jsonify({'error': 'Falsches Passwort'}), 403
-
+    data = request.json or {}
     filename = data.get('filename')
     lat = data.get('lat')
     lon = data.get('lon')
@@ -751,13 +784,50 @@ def update_location():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/check_login', methods=['POST'])
-@limiter.limit("5 per minute")
-def check_login():
-    data = request.json
-    if secrets.compare_digest(data.get('admin_token', ''), CONFIG['ADMIN_TOKEN']):
+@app.route('/api/admin/photos')
+@admin_required
+def admin_list_photos():
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT filename, lat, lon, timestamp, location FROM photos ORDER BY timestamp DESC"
+            ).fetchall()
+    except Exception as e:
+        logger.error(f"Admin photo list error: {e}")
+        return jsonify({'error': 'DB Error'}), 500
+
+    photos = []
+    for r in rows:
+        p = dict(r)
+        p['date_str'] = datetime.fromtimestamp(p['timestamp']).strftime('%d.%m.%Y') if p['timestamp'] else ''
+        photos.append(p)
+
+    return jsonify({'photos': photos})
+
+
+@app.route('/api/admin/photos/<path:filename>', methods=['DELETE'])
+@admin_required
+def admin_delete_photo(filename):
+    base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
+    requested_path = os.path.abspath(os.path.join(base_dir, filename))
+    if not os.path.commonpath([base_dir, requested_path]) == base_dir:
+        abort(403)
+
+    try:
+        with get_db() as conn:
+            conn.execute("DELETE FROM photos WHERE filename = ?", (filename,))
+            conn.execute("DELETE FROM routes WHERE start_filename = ? OR end_filename = ?", (filename, filename))
+
+        for path in (requested_path, _thumb_path(filename), _thumb_path(filename, '_blur'), _thumb_path(filename, '_lg')):
+            if os.path.exists(path):
+                os.remove(path)
+
+        logger.info(f"Deleted photo: {filename}")
         return jsonify({'success': True})
-    return jsonify({'error': 'Wrong password'}), 403
+
+    except Exception as e:
+        logger.error(f"Delete photo error: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 def start_background_services():

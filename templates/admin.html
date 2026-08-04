@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Admin{% endblock %}
+
+{% block head %}
+{% if logged_in %}
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="preconnect" href="https://api.maptiler.com">
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="">
+{% endif %}
+{% endblock %}
+
+{% block body_attrs %}class="admin-page" data-maptiler-key="{{ maptiler_key }}"{% endblock %}
+
+{% block content %}
+{% if logged_in %}
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>Admin</h1>
+            <form method="post" action="{{ url_for('admin_logout') }}">
+                <button type="submit" class="admin-logout-btn">Abmelden</button>
+            </form>
+        </header>
+
+        <div class="admin-grid">
+
+            <section class="admin-card" id="card-upload">
+                <h2>Fotos hochladen</h2>
+
+                <div class="admin-upload-drop" id="admin-dropzone">
+                    <input type="file" id="admin-file-input" multiple accept="image/*" style="display:none;" aria-hidden="true">
+                    <button type="button" id="admin-choose-files" class="action-btn">Dateien auswählen</button>
+                </div>
+
+                <div id="admin-gps-picker" class="admin-gps-picker" style="display:none;">
+                    <p class="admin-gps-warning">📍 Kein GPS im Foto gefunden. Ort auf der Karte wählen:</p>
+                    <div id="admin-map"></div>
+                    <button type="button" id="admin-gps-confirm" class="action-btn">Position bestätigen</button>
+                </div>
+
+                <div id="admin-upload-progress" class="admin-progress" style="display:none;">
+                    <div class="progress-container">
+                        <div id="admin-progress-fill" class="progress-bar-fill"></div>
+                    </div>
+                    <p id="admin-progress-text" class="admin-hint"></p>
+                </div>
+
+                <ul id="admin-upload-log" class="admin-upload-log" aria-label="Upload-Verlauf"></ul>
+            </section>
+
+            <section class="admin-card" id="card-manage">
+                <h2>Fotos verwalten</h2>
+                <ul id="admin-photo-list" class="admin-photo-list" aria-label="Vorhandene Fotos"></ul>
+            </section>
+
+            <!-- Weitere Admin-Features werden hier als zusätzliche .admin-card-Sections ergänzt -->
+
+        </div>
+    </div>
+
+    <div id="admin-fix-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-fix-title">
+        <div class="modal-content">
+            <button class="close-modal" id="admin-fix-close" aria-label="Schließen">&times;</button>
+            <h3 id="admin-fix-title">Ort korrigieren</h3>
+            <div id="admin-fix-map"></div>
+            <button type="button" id="admin-fix-confirm" class="action-btn">Position speichern</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin="" defer></script>
+    <script type="module" src="{{ url_for('static', filename='admin-main.js') }}"></script>
+{% else %}
+    <div class="login-container">
+        <div class="login-box">
+            <div class="icon-circle">
+                <svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+            </div>
+
+            <h1>Admin-Bereich</h1>
+
+            <form id="admin-login-form" style="margin-top: 20px;">
+                <input type="text" name="username" value="admin" autocomplete="username" style="display:none;">
+
+                <input type="password" id="admin-password-input"
+                       name="password"
+                       placeholder="Admin Passwort"
+                       autocomplete="current-password"
+                       required
+                       class="admin-password-input">
+
+                <p id="admin-login-error" class="admin-login-error" style="display:none;"></p>
+
+                <button type="submit" class="action-btn">Anmelden</button>
+            </form>
+        </div>
+    </div>
+
+    <script type="module" src="{{ url_for('static', filename='admin-login.js') }}"></script>
+{% endif %}
+{% endblock %}

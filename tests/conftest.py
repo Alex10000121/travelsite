@@ -24,3 +24,13 @@ def app(tmp_path, monkeypatch):
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture
+def admin_client(client):
+    """Client mit bereits gesetzter Admin-Session.
+    Setzt die Session direkt statt über /admin/login, damit Tests nicht
+    gemeinsam gegen dessen Rate-Limit laufen (das hat eigene Tests in TestAdminLogin)."""
+    with client.session_transaction() as sess:
+        sess['is_admin'] = True
+    return client
