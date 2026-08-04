@@ -26,17 +26,32 @@ class TestApiRoute:
         assert response.status_code == 200
         data = response.get_json()
         assert 'photos' in data
-        assert 'stats' in data
+        assert 'routes' in data
 
     def test_invalid_token_returns_403(self, client):
         response = client.get('/api/route?token=wrong')
         assert response.status_code == 403
 
-    def test_empty_db_returns_zero_stats(self, client):
-        response = client.get('/api/route?token=test_token')
+
+class TestApiStats:
+    def test_valid_token_returns_json(self, client):
+        response = client.get('/api/stats?token=test_token')
+        assert response.status_code == 200
         data = response.get_json()
-        assert data['stats']['photo_count'] == 0
-        assert data['stats']['total_km'] == 0
+        assert 'total_km' in data
+        assert 'countries' in data
+        assert 'photo_count' in data
+        assert 'days' in data
+
+    def test_invalid_token_returns_403(self, client):
+        response = client.get('/api/stats?token=wrong')
+        assert response.status_code == 403
+
+    def test_empty_db_returns_zero_stats(self, client):
+        response = client.get('/api/stats?token=test_token')
+        data = response.get_json()
+        assert data['photo_count'] == 0
+        assert data['total_km'] == 0
 
 
 class TestCheckLogin:
