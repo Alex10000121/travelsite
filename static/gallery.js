@@ -199,6 +199,11 @@ export class GalleryController {
                 imgEl.src          = url;
                 imgEl.style.display = 'block';
                 imgEl.onload       = () => { imgEl.style.opacity = 1; };
+
+                // Ken-Burns-Animation pro Foto neu starten (sonst läuft sie einfach weiter/bleibt stehen)
+                imgEl.style.animation = 'none';
+                void imgEl.offsetWidth;
+                imgEl.style.animation = '';
             }
             if (bgEl) {
                 bgEl.src          = blurUrl;

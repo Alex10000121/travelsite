@@ -128,6 +128,16 @@ export class MapController {
             300, '#89c4d9'
         ];
 
+        // An die Karte gebundenes Licht statt ans Viewport, damit Gebäude beim
+        // Kamera-Spin (_startSpin) je nach Ausrichtung zur "Sonne" unterschiedlich
+        // beschattet wirken statt flach/künstlich auszusehen.
+        this._map.setLight({
+            anchor: 'map',
+            color: '#fff6e8',
+            intensity: 0.6,
+            position: [1.15, 210, 40]
+        });
+
         const styleLayers = this._map.getStyle().layers;
         const existingExtrusions = styleLayers.filter(l => l.type === 'fill-extrusion');
 
@@ -137,6 +147,7 @@ export class MapController {
                 if ((l.minzoom ?? 0) > 13) this._map.setLayerZoomRange(l.id, 13, l.maxzoom ?? 24);
                 this._map.setPaintProperty(l.id, 'fill-extrusion-color', buildingColor);
                 this._map.setPaintProperty(l.id, 'fill-extrusion-opacity', 0.95);
+                this._map.setPaintProperty(l.id, 'fill-extrusion-vertical-gradient', true);
             });
             return;
         }
@@ -157,7 +168,8 @@ export class MapController {
                     'fill-extrusion-color': buildingColor,
                     'fill-extrusion-height': ['coalesce', ['get', 'render_height'], ['get', 'height'], 5],
                     'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], ['get', 'min_height'], 0],
-                    'fill-extrusion-opacity': 0.95
+                    'fill-extrusion-opacity': 0.95,
+                    'fill-extrusion-vertical-gradient': true
                 }
             });
         } catch (_) {}
