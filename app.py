@@ -31,6 +31,18 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 Compress(app)
 
+
+@app.after_request
+def no_cache_static(response):
+    # Statische JS/CSS-Dateien importieren sich gegenseitig ohne Versions-Query
+    # (main.js -> map.js -> ...). Ohne erzwungene Revalidierung kann ein Browser
+    # einzelne Dateien unterschiedlich lange cachen, sodass nach einem Deploy alte
+    # und neue Versionen gemischt geladen werden und das Frontend bricht.
+    if request.path.startswith('/static/'):
+        response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
 limiter = Limiter(
     get_remote_address,
     app=app,
