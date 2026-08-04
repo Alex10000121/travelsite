@@ -142,6 +142,14 @@ body, html {
 }
 .info-overlay h2 { margin: 0; font-size: 1rem; }
 .info-overlay p { margin: 2px 0 0 0; font-size: 0.8rem; color: var(--text-muted); }
+.photo-favorite-badge {
+    position: absolute;
+    top: -10px; right: 14px;
+    font-size: 1.1rem;
+    color: #facc15;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+.photo-note { font-style: italic; }
 
 /* Filmstrip: eigene Leiste ganz unten, schnelles Springen zu einem beliebigen Foto */
 .filmstrip {
@@ -350,7 +358,13 @@ body, html {
     padding: 8px 14px;
     text-align: left;
 }
-.country-list .country-flag { font-size: 1.4rem; line-height: 1; }
+.country-list .country-flag {
+    width: 24px; height: 18px;
+    object-fit: cover;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.15);
+    flex: 0 0 auto;
+}
 .country-list .country-name { flex: 1; font-size: 0.95rem; }
 .country-list .country-count { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
 
@@ -407,17 +421,50 @@ body.admin-page { overflow-y: auto; }
 .admin-search-input:focus { outline: none; border-color: var(--accent-color); }
 
 .admin-photo-list { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-.admin-photo-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.05); }
+.admin-photo-item { padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.05); }
+.admin-photo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .admin-photo-item img { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; }
-.admin-photo-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.admin-photo-info { flex: 1 1 120px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .admin-photo-location { font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .admin-photo-date { font-size: 0.75rem; color: var(--text-muted); }
-.admin-photo-actions { display: flex; gap: 6px; flex: 0 0 auto; }
-.admin-fix-btn, .admin-delete-btn { border: none; border-radius: 8px; padding: 8px 10px; font-size: 0.8rem; cursor: pointer; color: white; }
+.admin-photo-actions { display: flex; gap: 6px; flex: 0 0 auto; margin-left: auto; }
+.admin-fix-btn, .admin-delete-btn, .admin-fav-btn, .admin-note-btn {
+    border: none; border-radius: 8px;
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.95rem; line-height: 1; cursor: pointer; color: white;
+    flex: 0 0 auto;
+}
 .admin-fix-btn { background: var(--accent-color); }
 .admin-fix-btn:hover { background: var(--accent-hover); }
+.admin-note-btn { background: rgba(255,255,255,0.1); }
+.admin-note-btn:hover { background: rgba(255,255,255,0.18); }
+.admin-fav-btn { background: rgba(255,255,255,0.1); }
+.admin-fav-btn:hover { background: rgba(255,255,255,0.18); }
+.admin-fav-btn.active { background: #ca8a04; }
 .admin-delete-btn { background: #7f1d1d; }
 .admin-delete-btn:hover { background: #991b1b; }
+
+.admin-note-editor { display: none; flex-direction: column; gap: 8px; margin-top: 10px; }
+.admin-note-input {
+    width: 100%;
+    min-height: 60px;
+    resize: vertical;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05);
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 0.85rem;
+}
+.admin-note-save-btn {
+    align-self: flex-end;
+    border: none; border-radius: 8px; padding: 6px 14px;
+    font-size: 0.8rem; cursor: pointer; color: white;
+    background: var(--accent-color);
+}
+.admin-note-save-btn:hover { background: var(--accent-hover); }
 
 .admin-load-more-btn { width: 100%; margin-top: 12px; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: var(--text-main); font-size: 0.85rem; cursor: pointer; }
 .admin-load-more-btn:hover { background: rgba(255,255,255,0.1); }

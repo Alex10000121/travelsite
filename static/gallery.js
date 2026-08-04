@@ -3,15 +3,34 @@
 
 import { encodeFilenamePath } from './filename-utils.js';
 
+// WMO-Wettercode -> Emoji (Open-Meteo liefert den Rohcode, siehe fetch_weather in app.py).
+// Nur grobe Kategorien, kein Anspruch auf Vollstaendigkeit aller ~30 WMO-Codes.
+const WEATHER_ICON_GROUPS = [
+    { codes: [0], icon: '☀️' },
+    { codes: [1, 2], icon: '🌤️' },
+    { codes: [3], icon: '☁️' },
+    { codes: [45, 48], icon: '🌫️' },
+    { codes: [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82], icon: '🌧️' },
+    { codes: [71, 73, 75, 77, 85, 86], icon: '❄️' },
+    { codes: [95, 96, 99], icon: '⛈️' },
+];
+
+function weatherEmoji(code) {
+    return WEATHER_ICON_GROUPS.find(g => g.codes.includes(code))?.icon ?? '🌡️';
+}
+
 export class GalleryController {
 
     /**
      * @param {object} dom
-     * @param {HTMLImageElement}  dom.currentPhoto  - Haupt-Foto-Element
-     * @param {HTMLImageElement}  dom.bgPhoto       - Hintergrund-Blur-Element
-     * @param {HTMLElement}       dom.txtLocation   - Ort-Textfeld
-     * @param {HTMLElement}       dom.txtDate       - Datum-Textfeld
-     * @param {HTMLElement|null}  dom.galleryPanel  - Touch-Ziel für Swipe-Gesten
+     * @param {HTMLImageElement}  dom.currentPhoto   - Haupt-Foto-Element
+     * @param {HTMLImageElement}  dom.bgPhoto        - Hintergrund-Blur-Element
+     * @param {HTMLElement}       dom.txtLocation    - Ort-Textfeld
+     * @param {HTMLElement}       dom.txtDate        - Datum-Textfeld
+     * @param {HTMLElement}       [dom.txtWeather]   - Wetter-Badge (optional, nur wenn Daten vorhanden)
+     * @param {HTMLElement}       [dom.txtNote]      - Notiz-Text (optional, nur wenn gesetzt)
+     * @param {HTMLElement}       [dom.favoriteBadge] - Favoriten-Stern (optional)
+     * @param {HTMLElement|null}  dom.galleryPanel   - Touch-Ziel für Swipe-Gesten
      * @param {string} token - Öffentlicher Lese-Token für Thumb-URLs
      */
     constructor(dom, token) {
@@ -144,6 +163,9 @@ export class GalleryController {
 
         this._setText(this._dom.txtLocation, photo.location || 'Unbekannt');
         this._setText(this._dom.txtDate, photo.date_str || 'Datum unbekannt');
+        this._updateFavoriteBadge(photo);
+        this._updateOptionalText(this._dom.txtWeather, this._weatherText(photo));
+        this._updateOptionalText(this._dom.txtNote, photo.note);
 
         this._onPhotoChange?.(this._currentIndex, photo);
     }
@@ -190,6 +212,33 @@ export class GalleryController {
 
     _setText(el, text) {
         if (el) el.innerText = text;
+    }
+
+    /**
+     * Blendet ein optionales Textfeld (Wetter/Notiz) nur ein, wenn Inhalt vorhanden ist.
+     * Immer ein expliziter display-Wert statt '' - sonst faellt die Anzeige auf ein
+     * CSS-Standard-display:none zurueck (Ausgangszustand vor dem ersten _update()).
+     */
+    _updateOptionalText(el, text) {
+        if (!el) return;
+        if (text) {
+            el.innerText = text;
+            el.style.display = 'block';
+        } else {
+            el.innerText = '';
+            el.style.display = 'none';
+        }
+    }
+
+    _updateFavoriteBadge(photo) {
+        const el = this._dom.favoriteBadge;
+        if (el) el.style.display = photo.is_favorite ? 'block' : 'none';
+    }
+
+    /** @returns {string|null} z.B. "☀️ 24°C", oder null falls keine Wetterdaten vorhanden. */
+    _weatherText(photo) {
+        if (photo.weather_temp == null || photo.weather_code == null) return null;
+        return `${weatherEmoji(photo.weather_code)} ${Math.round(photo.weather_temp)}°C`;
     }
 
     _bindKeyboard() {

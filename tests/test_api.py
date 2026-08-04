@@ -421,6 +421,155 @@ class TestUpdateLocation:
         assert row['location'] != 'Unbekannt'
 
 
+class TestUpdateNote:
+    def _seed(self, note=None):
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location, note) VALUES (?, ?, ?, ?, ?, ?)",
+                ('note_test.jpg', 48.0, 11.0, 1700000000.0, 'München, DE', note)
+            )
+            conn.commit()
+
+    def test_without_admin_session_returns_403(self, client):
+        response = client.post('/api/admin/photos/x.jpg/note',
+                               data=json.dumps({'note': 'Test'}),
+                               content_type='application/json')
+        assert response.status_code == 403
+
+    def test_sets_a_note(self, admin_client):
+        self._seed()
+        response = admin_client.post('/api/admin/photos/note_test.jpg/note',
+                                     data=json.dumps({'note': 'Tolles Restaurant hier gefunden'}),
+                                     content_type='application/json')
+        assert response.status_code == 200
+        assert response.get_json()['note'] == 'Tolles Restaurant hier gefunden'
+
+        from app import get_db
+        with get_db() as conn:
+            row = conn.execute("SELECT note FROM photos WHERE filename = ?", ('note_test.jpg',)).fetchone()
+        assert row['note'] == 'Tolles Restaurant hier gefunden'
+
+    def test_empty_note_clears_it(self, admin_client):
+        self._seed(note='Alte Notiz')
+        response = admin_client.post('/api/admin/photos/note_test.jpg/note',
+                                     data=json.dumps({'note': ''}),
+                                     content_type='application/json')
+        assert response.status_code == 200
+        assert response.get_json()['note'] is None
+
+    def test_note_is_trimmed(self, admin_client):
+        self._seed()
+        response = admin_client.post('/api/admin/photos/note_test.jpg/note',
+                                     data=json.dumps({'note': '  mit Leerzeichen drumrum  '}),
+                                     content_type='application/json')
+        assert response.get_json()['note'] == 'mit Leerzeichen drumrum'
+
+    def test_note_too_long_returns_400(self, admin_client):
+        self._seed()
+        response = admin_client.post('/api/admin/photos/note_test.jpg/note',
+                                     data=json.dumps({'note': 'x' * 2001}),
+                                     content_type='application/json')
+        assert response.status_code == 400
+
+    def test_non_string_note_returns_400(self, admin_client):
+        self._seed()
+        response = admin_client.post('/api/admin/photos/note_test.jpg/note',
+                                     data=json.dumps({'note': 12345}),
+                                     content_type='application/json')
+        assert response.status_code == 400
+
+    def test_nonexistent_photo_still_returns_success(self, admin_client):
+        response = admin_client.post('/api/admin/photos/never_uploaded.jpg/note',
+                                     data=json.dumps({'note': 'Test'}),
+                                     content_type='application/json')
+        assert response.status_code == 200
+
+
+class TestUpdateFavorite:
+    def _seed(self):
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('fav_test.jpg', 48.0, 11.0, 1700000000.0, 'München, DE')
+            )
+            conn.commit()
+
+    def test_without_admin_session_returns_403(self, client):
+        response = client.post('/api/admin/photos/x.jpg/favorite',
+                               data=json.dumps({'favorite': True}),
+                               content_type='application/json')
+        assert response.status_code == 403
+
+    def test_marks_as_favorite(self, admin_client):
+        self._seed()
+        response = admin_client.post('/api/admin/photos/fav_test.jpg/favorite',
+                                     data=json.dumps({'favorite': True}),
+                                     content_type='application/json')
+        assert response.status_code == 200
+        assert response.get_json()['favorite'] is True
+
+        from app import get_db
+        with get_db() as conn:
+            row = conn.execute("SELECT is_favorite FROM photos WHERE filename = ?", ('fav_test.jpg',)).fetchone()
+        assert row['is_favorite'] == 1
+
+    def test_unmarks_as_favorite(self, admin_client):
+        self._seed()
+        admin_client.post('/api/admin/photos/fav_test.jpg/favorite',
+                          data=json.dumps({'favorite': True}), content_type='application/json')
+        response = admin_client.post('/api/admin/photos/fav_test.jpg/favorite',
+                                     data=json.dumps({'favorite': False}),
+                                     content_type='application/json')
+        assert response.get_json()['favorite'] is False
+
+    def test_missing_favorite_field_defaults_to_false(self, admin_client):
+        self._seed()
+        response = admin_client.post('/api/admin/photos/fav_test.jpg/favorite',
+                                     data=json.dumps({}),
+                                     content_type='application/json')
+        assert response.status_code == 200
+        assert response.get_json()['favorite'] is False
+
+
+class TestRouteMode:
+    def test_fetch_missing_routes_marks_far_apart_photos_as_flight(self, app):
+        from app import fetch_missing_routes, get_db
+        # Berlin -> Tokio: weit ueber OSRM_MAX_KM, OSRM liefert dafuer nie eine Route
+        fetch_missing_routes([('a.jpg', 'b.jpg', 52.52, 13.405, 35.68, 139.69)])
+
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT mode FROM routes WHERE start_filename = ? AND end_filename = ?",
+                ('a.jpg', 'b.jpg')
+            ).fetchone()
+        assert row['mode'] == 'flight'
+
+    def test_api_route_includes_mode_for_cached_routes(self, client):
+        from app import get_db
+        import json as json_module
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('r1.jpg', 48.0, 11.0, 1700000000.0, 'A')
+            )
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('r2.jpg', 48.1, 11.1, 1700000100.0, 'B')
+            )
+            conn.execute(
+                "INSERT INTO routes (start_filename, end_filename, geometry, mode) VALUES (?, ?, ?, ?)",
+                ('r1.jpg', 'r2.jpg', json_module.dumps({'type': 'LineString', 'coordinates': [[11.0, 48.0], [11.1, 48.1]]}), 'drive')
+            )
+            conn.commit()
+
+        response = client.get('/api/route?token=test_token')
+        data = response.get_json()
+        route = next(r for r in data['routes'] if r is not None and r.get('mode') == 'drive')
+        assert route['geometry']['type'] == 'LineString'
+
+
 class TestApiThumbAdminSession:
     def test_admin_session_without_token_returns_200(self, admin_client):
         from PIL import Image

@@ -105,6 +105,53 @@ export async function updateLocation(filename, lat, lon) {
 }
 
 /**
+ * Speichert eine optionale Notiz für ein Foto. Leerer String entfernt die Notiz.
+ * @param {string} filename
+ * @param {string} note
+ * @returns {Promise<void>}
+ */
+export async function updateNote(filename, note) {
+    let res;
+    try {
+        res = await fetch(`/api/admin/photos/${encodeFilenamePath(filename)}/note`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note })
+        });
+    } catch (err) {
+        throw new Error(`Netzwerkfehler beim Speichern der Notiz: ${err.message}`);
+    }
+
+    if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `Notiz konnte nicht gespeichert werden (HTTP ${res.status}).`);
+    }
+}
+
+/**
+ * Markiert ein Foto als Favorit oder entfernt die Markierung.
+ * @param {string} filename
+ * @param {boolean} favorite
+ * @returns {Promise<void>}
+ */
+export async function setFavorite(filename, favorite) {
+    let res;
+    try {
+        res = await fetch(`/api/admin/photos/${encodeFilenamePath(filename)}/favorite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ favorite })
+        });
+    } catch (err) {
+        throw new Error(`Netzwerkfehler beim Speichern des Favoriten: ${err.message}`);
+    }
+
+    if (!res.ok) {
+        throw new Error(`Favorit konnte nicht gespeichert werden (HTTP ${res.status}).`);
+    }
+}
+
+/**
  * Lädt eine Seite Fotos für die Admin-Verwaltungsansicht (inkl. Ort/Datum),
  * optional gefiltert nach Ort/Dateiname. Serverseitig paginiert, damit bei
  * vielen hundert Fotos nicht alles auf einmal geladen/gerendert wird.

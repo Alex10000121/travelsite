@@ -213,6 +213,40 @@ def get_location_name(lat, lon):
     return "Unbekannt"
 
 
+def fetch_weather(lat, lon, timestamp):
+    """Tages-Hoechsttemperatur + WMO-Wettercode fuer Ort/Datum eines Fotos, ueber die
+    kostenlose Open-Meteo Archive-API (kein API-Key noetig). Rein optional/best-effort:
+    die Archive-API liefert nur Daten mit ein paar Tagen Verzoegerung (Reanalyse-Daten),
+    ganz frisch hochgeladene Fotos bleiben also zunaechst ohne Wetter - kein Fehler,
+    einfach (None, None).
+    """
+    if lat is None or lon is None or not timestamp:
+        return None, None
+    try:
+        date_str = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d')
+        resp = requests.get(
+            "https://archive-api.open-meteo.com/v1/archive",
+            params={
+                'latitude': lat,
+                'longitude': lon,
+                'start_date': date_str,
+                'end_date': date_str,
+                'daily': 'temperature_2m_max,weathercode',
+                'timezone': 'UTC',
+            },
+            timeout=5,
+        )
+        resp.raise_for_status()
+        daily = resp.json().get('daily', {})
+        temps = daily.get('temperature_2m_max') or []
+        codes = daily.get('weathercode') or []
+        if temps and codes and temps[0] is not None:
+            return temps[0], codes[0]
+    except Exception as e:
+        logger.warning(f"Weather lookup error ({lat},{lon}): {e}")
+    return None, None
+
+
 OSRM_MAX_KM = 500
 
 
@@ -250,19 +284,36 @@ def fetch_missing_routes(missing_pairs):
                     continue
 
             geometry = fetch_osrm_route(lat1, lon1, lat2, lon2)
+            # Kein OSRM-Ergebnis (zu weit fuer die Driving-API oder API-Fehler) heisst in
+            # der Praxis fast immer: das war ein Flug, keine Autostrecke - automatisch aus
+            # dem vorhandenen Distanz-Heuristik abgeleitet, ohne manuelles Nachpflegen.
+            mode = 'drive'
             if geometry is None:
                 geometry = straight_line_geometry(lat1, lon1, lat2, lon2)
+                mode = 'flight'
 
             with get_db() as conn:
                 conn.execute(
-                    "INSERT OR IGNORE INTO routes (start_filename, end_filename, geometry) VALUES (?, ?, ?)",
-                    (start_fn, end_fn, json.dumps(geometry))
+                    "INSERT OR IGNORE INTO routes (start_filename, end_filename, geometry, mode) VALUES (?, ?, ?, ?)",
+                    (start_fn, end_fn, json.dumps(geometry), mode)
                 )
 
             if calculate_distance(lat1, lon1, lat2, lon2) <= OSRM_MAX_KM:
                 time.sleep(1)
         except Exception as e:
             logger.warning(f"Route background fetch error {start_fn} -> {end_fn}: {e}")
+
+
+def _fetch_and_store_weather(filename, lat, lon, timestamp):
+    weather_temp, weather_code = fetch_weather(lat, lon, timestamp)
+    if weather_temp is None:
+        return
+    try:
+        with get_db() as conn:
+            conn.execute("UPDATE photos SET weather_temp = ?, weather_code = ? WHERE filename = ?",
+                         (weather_temp, weather_code, filename))
+    except Exception as e:
+        logger.warning(f"Weather store error for {filename}: {e}")
 
 
 def _thumb_path(filename, suffix=''):
@@ -334,20 +385,49 @@ def get_db():
         conn.close()
 
 
+def _add_column_if_missing(conn, table, column, ddl):
+    """Leichtgewichtige Mini-Migration: SQLite kennt kein 'ADD COLUMN IF NOT EXISTS',
+    daher hier per try/except - schlaegt fehl (und wird ignoriert), wenn die Spalte
+    aus einer frueheren App-Version bereits existiert."""
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+    except sqlite3.OperationalError:
+        pass
+
+
+def _backfill_route_modes(conn):
+    """Routen aus der Zeit vor Einfuehrung von 'mode' haben durch den ALTER-TABLE-Default
+    pauschal 'drive' - laesst sich aber aus der Geometrie ableiten: eine Luftlinie
+    (straight_line_geometry) hat immer genau zwei Koordinatenpunkte, eine echte
+    OSRM-Route praktisch nie."""
+    rows = conn.execute("SELECT id, geometry FROM routes WHERE mode = 'drive'").fetchall()
+    for row in rows:
+        try:
+            coords = json.loads(row['geometry'])['coordinates']
+        except (TypeError, KeyError, ValueError):
+            continue
+        if len(coords) == 2:
+            conn.execute("UPDATE routes SET mode = 'flight' WHERE id = ?", (row['id'],))
+
+
 def init_db():
     try:
         with get_db() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS photos (
-                    filename TEXT PRIMARY KEY, 
-                    lat REAL, 
-                    lon REAL, 
-                    timestamp REAL, 
+                    filename TEXT PRIMARY KEY,
+                    lat REAL,
+                    lon REAL,
+                    timestamp REAL,
                     location TEXT
                 )
             ''')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_photos_timestamp ON photos(timestamp)')
+            _add_column_if_missing(conn, 'photos', 'note', 'TEXT')
+            _add_column_if_missing(conn, 'photos', 'is_favorite', 'INTEGER NOT NULL DEFAULT 0')
+            _add_column_if_missing(conn, 'photos', 'weather_temp', 'REAL')
+            _add_column_if_missing(conn, 'photos', 'weather_code', 'INTEGER')
             conn.execute('CREATE TABLE IF NOT EXISTS global_stats (key TEXT PRIMARY KEY, value INTEGER)')
             conn.execute("INSERT OR IGNORE INTO global_stats (key, value) VALUES ('visitor_count', 0)")
             conn.execute('CREATE TABLE IF NOT EXISTS active_sessions (hash TEXT PRIMARY KEY, timestamp REAL)')
@@ -362,6 +442,8 @@ def init_db():
                     UNIQUE(start_filename, end_filename)
                 )
             ''')
+            _add_column_if_missing(conn, 'routes', 'mode', "TEXT NOT NULL DEFAULT 'drive'")
+            _backfill_route_modes(conn)
         logger.info("Database initialized.")
     except Exception as e:
         logger.critical(f"Database init failed: {e}")
@@ -439,14 +521,16 @@ def index_photo(full_path, abs_photo_dir):
             lat, lon = coords
             loc = get_location_name(lat, lon)
             final_ts = timestamp or os.path.getmtime(full_path)
+            weather_temp, weather_code = fetch_weather(lat, lon, final_ts)
 
             if not generate_thumbnails(full_path, thumb_path, blur_thumb_path):
                 logger.error(f"Skipping index (thumbnail generation failed): {full_path}")
                 return
 
             cursor = conn.execute(
-                "INSERT OR IGNORE INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                (rel_path, lat, lon, final_ts, loc)
+                "INSERT OR IGNORE INTO photos (filename, lat, lon, timestamp, location, weather_temp, weather_code) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (rel_path, lat, lon, final_ts, loc, weather_temp, weather_code)
             )
             if cursor.rowcount:
                 logger.info(f"Indexed: {rel_path} (GPS: {lat}, {lon})")
@@ -614,7 +698,7 @@ def api_route():
             rows = conn.execute(
                 "SELECT * FROM photos WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY timestamp ASC"
             ).fetchall()
-            route_rows = conn.execute("SELECT start_filename, end_filename, geometry FROM routes").fetchall()
+            route_rows = conn.execute("SELECT start_filename, end_filename, geometry, mode FROM routes").fetchall()
 
         for r in rows:
             p = dict(r)
@@ -625,7 +709,7 @@ def api_route():
         return jsonify({"error": "DB Error"}), 500
 
     route_cache = {
-        (r['start_filename'], r['end_filename']): json.loads(r['geometry'])
+        (r['start_filename'], r['end_filename']): {'geometry': json.loads(r['geometry']), 'mode': r['mode']}
         for r in route_rows
     }
 
@@ -646,7 +730,10 @@ def api_route():
                     if cached:
                         routes.append(cached)
                     else:
-                        routes.append(straight_line_geometry(lat1, lon1, lat2, lon2))
+                        # Vorlaeufiger Platzhalter, bis der Hintergrund-Fetch unten die
+                        # richtige Geometrie/den Modus in die DB schreibt.
+                        guessed_mode = 'flight' if calculate_distance(lat1, lon1, lat2, lon2) > OSRM_MAX_KM else 'drive'
+                        routes.append({'geometry': straight_line_geometry(lat1, lon1, lat2, lon2), 'mode': guessed_mode})
                         missing_pairs.append((p1['filename'], photo['filename'], lat1, lon1, lat2, lon2))
                 else:
                     routes.append(None)
@@ -825,6 +912,11 @@ def upload_photo():
 
         os.replace(save_path, final_path)
 
+        # Nicht synchron im Request abfragen (Open-Meteo ist ein externer Netzwerkaufruf,
+        # der die Upload-Antwort spuerbar verzoegern wuerde) - Nachtragen im Hintergrund,
+        # wie schon bei fehlenden OSRM-Routen.
+        threading.Thread(target=_fetch_and_store_weather, args=(unique_name, lat, lon, final_ts), daemon=True).start()
+
         return jsonify({'success': True, 'file': unique_name, 'location': loc,
                         'missing_gps': False, 'lat': lat, 'lon': lon, 'timestamp': final_ts})
 
@@ -872,6 +964,48 @@ def update_location():
         return jsonify({'error': 'Ort konnte nicht gespeichert werden.'}), 500
 
 
+NOTE_MAX_LENGTH = 2000
+
+
+@app.route('/api/admin/photos/<path:filename>/note', methods=['POST'])
+@admin_required
+def update_note(filename):
+    data = request.get_json(silent=True) or {}
+    note = data.get('note')
+
+    if note is not None:
+        if not isinstance(note, str):
+            return jsonify({'error': 'note muss Text sein'}), 400
+        note = note.strip()
+        if len(note) > NOTE_MAX_LENGTH:
+            return jsonify({'error': f'Notiz zu lang (max. {NOTE_MAX_LENGTH} Zeichen)'}), 400
+        if note == '':
+            note = None  # leere Notiz = Notiz entfernen, nicht als leerer String speichern
+
+    try:
+        with get_db() as conn:
+            conn.execute("UPDATE photos SET note = ? WHERE filename = ?", (note, filename))
+        return jsonify({'success': True, 'note': note})
+    except Exception as e:
+        logger.error(f"Update note error: {e}")
+        return jsonify({'error': 'Notiz konnte nicht gespeichert werden.'}), 500
+
+
+@app.route('/api/admin/photos/<path:filename>/favorite', methods=['POST'])
+@admin_required
+def update_favorite(filename):
+    data = request.get_json(silent=True) or {}
+    favorite = bool(data.get('favorite'))
+
+    try:
+        with get_db() as conn:
+            conn.execute("UPDATE photos SET is_favorite = ? WHERE filename = ?", (int(favorite), filename))
+        return jsonify({'success': True, 'favorite': favorite})
+    except Exception as e:
+        logger.error(f"Update favorite error: {e}")
+        return jsonify({'error': 'Favorit konnte nicht gespeichert werden.'}), 500
+
+
 ADMIN_PHOTOS_PAGE_SIZE = 60
 
 
@@ -895,7 +1029,7 @@ def admin_list_photos():
                 params = ()
 
             rows = conn.execute(
-                f"SELECT filename, lat, lon, timestamp, location FROM photos {where} "
+                f"SELECT filename, lat, lon, timestamp, location, note, is_favorite FROM photos {where} "
                 f"ORDER BY timestamp DESC LIMIT ? OFFSET ?",
                 (*params, ADMIN_PHOTOS_PAGE_SIZE, offset)
             ).fetchall()

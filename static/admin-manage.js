@@ -5,7 +5,7 @@
 // bei mehreren hundert/tausend Fotos würde das sonst hunderte Thumbnail-Requests
 // und DOM-Knoten in einem Schlag erzeugen.
 
-import { fetchAdminPhotos, deletePhoto, updateLocation } from './api.js';
+import { fetchAdminPhotos, deletePhoto, updateLocation, updateNote, setFavorite } from './api.js';
 import { encodeFilenamePath } from './filename-utils.js';
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -96,11 +96,14 @@ export class AdminPhotoManager {
         const li = document.createElement('li');
         li.className = 'admin-photo-item';
 
+        const row = document.createElement('div');
+        row.className = 'admin-photo-row';
+
         const img = document.createElement('img');
         img.src = `/api/thumb/${encodeFilenamePath(photo.filename)}?size=blur`;
         img.loading = 'lazy';
         img.alt = '';
-        li.appendChild(img);
+        row.appendChild(img);
 
         const info = document.createElement('div');
         info.className = 'admin-photo-info';
@@ -114,27 +117,100 @@ export class AdminPhotoManager {
         date.textContent = photo.date_str || '';
 
         info.append(loc, date);
-        li.appendChild(info);
+        row.appendChild(info);
 
         const actions = document.createElement('div');
         actions.className = 'admin-photo-actions';
 
+        // Icon-only statt Text-Buttons: bei vier Aktionen nebeneinander sprengt
+        // Text ("★ Favorit", "📍 GPS", ...) die Kartenbreite und ueberlappt die
+        // Info-Spalte bzw. schneidet den letzten Button ab. Tooltip via title/aria-label.
+        const favBtn = document.createElement('button');
+        favBtn.type = 'button';
+        favBtn.className = 'admin-fav-btn';
+        this._renderFavBtn(favBtn, !!photo.is_favorite);
+        favBtn.addEventListener('click', async () => {
+            const next = !photo.is_favorite;
+            try {
+                await setFavorite(photo.filename, next);
+                photo.is_favorite = next;
+                this._renderFavBtn(favBtn, next);
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+
         const fixBtn = document.createElement('button');
         fixBtn.type = 'button';
         fixBtn.className = 'admin-fix-btn';
-        fixBtn.textContent = '📍 GPS';
+        fixBtn.textContent = '📍';
+        fixBtn.title = 'GPS-Position korrigieren';
+        fixBtn.setAttribute('aria-label', fixBtn.title);
         fixBtn.addEventListener('click', () => this._openFixModal(photo));
+
+        const noteBtn = document.createElement('button');
+        noteBtn.type = 'button';
+        noteBtn.className = 'admin-note-btn';
+        noteBtn.textContent = '📝';
+        noteBtn.title = 'Notiz';
+        noteBtn.setAttribute('aria-label', noteBtn.title);
 
         const delBtn = document.createElement('button');
         delBtn.type = 'button';
         delBtn.className = 'admin-delete-btn';
-        delBtn.textContent = '🗑 Löschen';
+        delBtn.textContent = '🗑';
+        delBtn.title = 'Löschen';
+        delBtn.setAttribute('aria-label', delBtn.title);
         delBtn.addEventListener('click', () => this._handleDelete(photo, li));
 
-        actions.append(fixBtn, delBtn);
-        li.appendChild(actions);
+        actions.append(favBtn, fixBtn, noteBtn, delBtn);
+        row.appendChild(actions);
+        li.appendChild(row);
+
+        const noteEditor = this._buildNoteEditor(photo);
+        noteBtn.addEventListener('click', () => {
+            noteEditor.style.display = noteEditor.style.display === 'none' ? 'flex' : 'none';
+        });
+        li.appendChild(noteEditor);
 
         return li;
+    }
+
+    /** Optionale Notiz - eingeklappt per Default, damit die Liste nicht ueberladen wirkt. */
+    _buildNoteEditor(photo) {
+        const wrap = document.createElement('div');
+        wrap.className = 'admin-note-editor';
+        wrap.style.display = 'none';
+
+        const textarea = document.createElement('textarea');
+        textarea.className = 'admin-note-input';
+        textarea.placeholder = 'Notiz zu diesem Foto (optional)…';
+        textarea.value = photo.note || '';
+        textarea.maxLength = 2000;
+
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.className = 'admin-note-save-btn';
+        saveBtn.textContent = 'Speichern';
+        saveBtn.addEventListener('click', async () => {
+            try {
+                await updateNote(photo.filename, textarea.value);
+                photo.note = textarea.value.trim() || null;
+                wrap.style.display = 'none';
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+
+        wrap.append(textarea, saveBtn);
+        return wrap;
+    }
+
+    _renderFavBtn(btn, active) {
+        btn.textContent = active ? '★' : '☆';
+        btn.title = active ? 'Favorit entfernen' : 'Als Favorit markieren';
+        btn.setAttribute('aria-label', btn.title);
+        btn.classList.toggle('active', active);
     }
 
     _openFixModal(photo) {

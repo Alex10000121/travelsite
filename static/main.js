@@ -18,6 +18,9 @@ const dom = {
     bgPhoto:        document.getElementById('bg-photo'),
     txtLocation:    document.getElementById('photo-location'),
     txtDate:        document.getElementById('photo-date'),
+    txtWeather:     document.getElementById('photo-weather'),
+    txtNote:        document.getElementById('photo-note'),
+    favoriteBadge:  document.getElementById('photo-favorite'),
     galleryPanel:   document.querySelector('.gallery-panel'),
     filmstrip:      document.getElementById('filmstrip'),
 
@@ -44,6 +47,9 @@ const gallery = new GalleryController({
     bgPhoto:      dom.bgPhoto,
     txtLocation:  dom.txtLocation,
     txtDate:      dom.txtDate,
+    txtWeather:   dom.txtWeather,
+    txtNote:      dom.txtNote,
+    favoriteBadge: dom.favoriteBadge,
     galleryPanel: dom.galleryPanel,
     filmstrip:    dom.filmstrip,
 }, TOKEN);
@@ -137,9 +143,12 @@ function summarizeCountries(photos) {
     return [...byCountry.entries()].map(([code, count]) => ({ code, count }));
 }
 
-/** Wandelt einen ISO-3166-1-alpha-2-Code in das Flaggen-Emoji um (z.B. "FR" -> 🇫🇷). */
-function flagEmoji(code) {
-    return code.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
+// Kein Emoji-Flag (String.fromCodePoint(127397 + ...)) - Windows rendert
+// Regional-Indicator-Symbole grundsaetzlich nicht als Flaggenbild, sondern nur
+// als zwei Buchstaben in Kaestchen (Segoe UI Emoji hat bewusst keine Flaggen-
+// Glyphen). Echtes Bild von flagcdn.com stattdessen, siehe renderCountryList.
+function flagUrl(code) {
+    return `https://flagcdn.com/24x18/${code.toLowerCase()}.png`;
 }
 
 let regionNames = null;
@@ -168,10 +177,15 @@ function renderCountryList(countries) {
     for (const { code, count } of countries) {
         const li = document.createElement('li');
 
-        const flag = document.createElement('span');
+        const flag = document.createElement('img');
         flag.className = 'country-flag';
-        flag.textContent = flagEmoji(code);
+        flag.src = flagUrl(code);
+        flag.alt = '';
+        flag.loading = 'lazy';
         flag.setAttribute('aria-hidden', 'true');
+        // Ungueltiger/unbekannter Code (z.B. Fallback-Koordinaten statt Ortsname) ->
+        // Bild durch den rohen Code ersetzen statt ein kaputtes Icon zu zeigen.
+        flag.addEventListener('error', () => { flag.replaceWith(document.createTextNode(code)); }, { once: true });
 
         const name = document.createElement('span');
         name.className = 'country-name';

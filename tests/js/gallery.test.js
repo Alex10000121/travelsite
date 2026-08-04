@@ -26,6 +26,71 @@ const PHOTOS = [
     { filename: 'e.jpg', location: 'Madrid, ES',  date_str: '05.01.2024', countryCode: 'ES' },
 ];
 
+function makeCaptionDom() {
+    return {
+        currentPhoto:  document.createElement('img'),
+        bgPhoto:       document.createElement('img'),
+        txtLocation:   document.createElement('h2'),
+        txtDate:       document.createElement('p'),
+        txtWeather:    document.createElement('p'),
+        txtNote:       document.createElement('p'),
+        favoriteBadge: document.createElement('span'),
+        galleryPanel:  null,
+    };
+}
+
+describe('optionale Caption-Felder (Notiz/Favorit/Wetter)', () => {
+    it('blendet Notiz/Wetter/Favorit standardmaessig aus, wenn nicht vorhanden', () => {
+        const dom = makeCaptionDom();
+        const g = new GalleryController(dom, 'test-token');
+        g.loadPhotos([{ ...PHOTOS[0] }], 0);
+
+        expect(dom.txtNote.style.display).toBe('none');
+        expect(dom.txtWeather.style.display).toBe('none');
+        expect(dom.favoriteBadge.style.display).toBe('none');
+    });
+
+    it('zeigt eine vorhandene Notiz an', () => {
+        const dom = makeCaptionDom();
+        const g = new GalleryController(dom, 'test-token');
+        g.loadPhotos([{ ...PHOTOS[0], note: 'Bestes Essen der Reise' }], 0);
+
+        expect(dom.txtNote.style.display).toBe('block');
+        expect(dom.txtNote.innerText).toBe('Bestes Essen der Reise');
+    });
+
+    it('zeigt den Favoriten-Stern, wenn is_favorite gesetzt ist', () => {
+        const dom = makeCaptionDom();
+        const g = new GalleryController(dom, 'test-token');
+        g.loadPhotos([{ ...PHOTOS[0], is_favorite: true }], 0);
+
+        expect(dom.favoriteBadge.style.display).toBe('block');
+    });
+
+    it('zeigt Wetter-Icon und gerundete Temperatur', () => {
+        const dom = makeCaptionDom();
+        const g = new GalleryController(dom, 'test-token');
+        g.loadPhotos([{ ...PHOTOS[0], weather_temp: 23.6, weather_code: 0 }], 0);
+
+        expect(dom.txtWeather.style.display).toBe('block');
+        expect(dom.txtWeather.innerText).toBe('☀️ 24°C');
+    });
+
+    it('aktualisiert die Felder beim Fotowechsel korrekt (kein Ueberbleibsel vom vorherigen Foto)', () => {
+        const dom = makeCaptionDom();
+        const g = new GalleryController(dom, 'test-token');
+        g.loadPhotos([
+            { ...PHOTOS[0], note: 'Notiz zu Foto 1' },
+            { ...PHOTOS[1] },
+        ], 0);
+        expect(dom.txtNote.style.display).toBe('block');
+
+        g.changePhoto(1);
+        expect(dom.txtNote.style.display).toBe('none');
+        expect(dom.txtNote.innerText).toBe('');
+    });
+});
+
 describe('changePhoto', () => {
     it('geht zum nächsten Foto', () => {
         const g = makeGallery();

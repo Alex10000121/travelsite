@@ -259,15 +259,35 @@ export class MapController {
     }
 
     _setupLayers() {
+        // Zwei Ebenen statt einer mit Daten-Ausdruck: 'line-dasharray' unterstuetzt in
+        // MapLibre GL keine daten-getriebene (pro Feature) Auswertung, nur pro Layer.
         if (!this._map.getLayer('route-line')) {
             this._map.addLayer({
                 id: 'route-line',
                 type: 'line',
                 source: 'route',
+                filter: ['!=', ['get', 'mode'], 'flight'],
                 paint: {
                     'line-color': '#f97316',
                     'line-width': 4,
                     'line-opacity': 0.95
+                }
+            });
+        }
+        if (!this._map.getLayer('route-line-flight')) {
+            this._map.addLayer({
+                id: 'route-line-flight',
+                type: 'line',
+                source: 'route',
+                filter: ['==', ['get', 'mode'], 'flight'],
+                paint: {
+                    // Kraeftigeres, gesaettigteres Blau + dickere/dichtere Striche als
+                    // urspruenglich - das helle #38bdf8 bei 3px ging auf den meisten
+                    // Kartenhintergruenden visuell unter.
+                    'line-color': '#0ea5e9',
+                    'line-width': 5,
+                    'line-opacity': 1,
+                    'line-dasharray': [2, 1.3]
                 }
             });
         }
@@ -335,9 +355,9 @@ export class MapController {
         const features = [];
 
         if (this._routes.length > 0) {
-            for (const geometry of this._routes) {
-                if (geometry) {
-                    features.push({ type: 'Feature', geometry, properties: {} });
+            for (const route of this._routes) {
+                if (route) {
+                    features.push({ type: 'Feature', geometry: route.geometry, properties: { mode: route.mode } });
                 }
             }
         } else {

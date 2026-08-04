@@ -2,8 +2,12 @@ import os
 import pytest
 import piexif
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 from PIL import Image
-from app import calculate_distance, get_decimal_from_dms, decimal_to_dms_rational, extract_exif_data, get_location_name
+from app import (
+    calculate_distance, get_decimal_from_dms, decimal_to_dms_rational,
+    extract_exif_data, get_location_name, fetch_weather,
+)
 
 
 class TestCalculateDistance:
@@ -181,6 +185,33 @@ class TestGetLocationName:
             result = get_location_name(51.5, 0.0)
             mock_search.assert_called_once()
             assert result == "London, GB"
+
+
+class TestFetchWeather:
+    def test_returns_none_for_missing_coords(self):
+        assert fetch_weather(None, 10.0, 1700000000.0) == (None, None)
+
+    def test_returns_none_for_missing_timestamp(self):
+        assert fetch_weather(48.0, 10.0, None) == (None, None)
+
+    def test_returns_temp_and_code_on_success(self):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {'daily': {'temperature_2m_max': [23.4], 'weathercode': [0]}}
+        with patch('app.requests.get', return_value=mock_resp) as mock_get:
+            temp, code = fetch_weather(48.0, 11.0, 1700000000.0)
+        assert (temp, code) == (23.4, 0)
+        mock_get.assert_called_once()
+
+    def test_returns_none_when_archive_has_no_data_yet(self):
+        # Frisch hochgeladenes Foto von heute - Open-Meteo Archive hinkt ein paar Tage hinterher
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {'daily': {'temperature_2m_max': [None], 'weathercode': [None]}}
+        with patch('app.requests.get', return_value=mock_resp):
+            assert fetch_weather(48.0, 11.0, 1700000000.0) == (None, None)
+
+    def test_returns_none_on_network_error(self):
+        with patch('app.requests.get', side_effect=Exception('timeout')):
+            assert fetch_weather(48.0, 11.0, 1700000000.0) == (None, None)
 
 
 class TestThumbPath:

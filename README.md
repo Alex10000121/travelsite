@@ -2,7 +2,7 @@
 
 **Travelsite** ist eine selbst gehostete Webanwendung, um Reisefotos auf einer interaktiven 3D-Karte zu visualisieren. Die App liest GPS- und EXIF-Daten direkt aus den Bildern, berechnet daraus eine Reiseroute über die OSRM-API und präsentiert alles in einer modernen Galerie mit filmischen Kameraanimationen.
 
-Konzipiert für den Betrieb auf einem NAS (z. B. Synology) oder einem kleinen VPS – leichtgewichtig, privat, ohne externe Dienste außer der Kartendarstellung.
+Konzipiert für den Betrieb auf einem NAS (z. B. Synology) oder einem kleinen VPS – leichtgewichtig, privat, ohne externe Dienste außer Kartendarstellung, Routing und optionalem Wetter (alle drei kostenlos und ohne eigenen Account nutzbar, MapTiler ausgenommen).
 
 ---
 
@@ -19,7 +19,12 @@ Konzipiert für den Betrieb auf einem NAS (z. B. Synology) oder einem kleinen VP
 - Straßenrouten werden serverseitig über die öffentliche OSRM Driving API berechnet
 - Ergebnisse werden dauerhaft in SQLite gecacht – kein erneuter API-Aufruf bei jedem Seitenbesuch
 - Fehlende Routen werden automatisch im Hintergrund nachgeladen
-- Strecken über 500 km (Flüge) werden als Luftlinie dargestellt
+- Strecken über 500 km bzw. ohne Straßenverbindung werden automatisch als Flug erkannt, als Luftlinie dargestellt und auf der Karte gestrichelt/blau statt durchgezogen/orange eingefärbt
+
+### Zusätzliche Foto-Details
+- Optionale Notiz pro Foto (z. B. "Bestes Restaurant der Reise") – rein optional, keine Pflichtangabe
+- Fotos als Favorit markieren, sichtbar als Stern in der Galerie-Beschriftung
+- Automatisches Wetter (Tages-Höchsttemperatur + Symbol) über die kostenlose Open-Meteo-Archiv-API, ohne API-Key. Gilt nur für neu gescannte/hochgeladene Fotos ab Einführung dieses Features, kein rückwirkendes Nachladen für Bestandsfotos; ganz frisch hochgeladene Fotos bleiben zunächst ohne Wetter, da die Archiv-API ein paar Tage Verzögerung hat
 
 ### Browser-Upload
 - Fotos direkt über den Browser hochladen, auch vom Smartphone
@@ -30,6 +35,7 @@ Konzipiert für den Betrieb auf einem NAS (z. B. Synology) oder einem kleinen VP
 - Bestehende Fotos durchsuchen (Ort oder Dateiname), paginiert auch bei mehreren hundert Fotos
 - Fotos löschen (inkl. Thumbnails und zugehöriger Routen-Cache-Einträge)
 - GPS-Position nachträglich korrigieren, falls ein Ort falsch erkannt wurde
+- Notiz hinzufügen/bearbeiten und Favoriten-Markierung setzen
 - Besucher-Dashboard: Gesamtzahl, aktuell aktive Besucher, Verlauf der letzten 30 Tage als Chart
 
 ### Automatischer Foto-Scanner
@@ -148,12 +154,14 @@ FLASK_DEBUG=0
 | Statistik-Übersicht öffnen | Einzelklick auf das Balken-Symbol oben rechts | dito |
 | Admin-Bereich öffnen | Doppelklick auf dasselbe Balken-Symbol | dito |
 
+Notiz, Favoriten-Stern und Wetter erscheinen automatisch in der Foto-Beschriftung, sofern für das jeweilige Foto vorhanden – keine eigene Aktion nötig.
+
 ### Admin-Funktionen
 
 Der Admin-Bereich liegt unter `/admin` und ist durch eine eigene Anmeldung mit dem `ADMIN_TOKEN` geschützt (serverseitige Session, kein Query-Token wie bei der Galerie):
 
 - **Fotos hochladen** – direkt über den Browser, auch mehrere gleichzeitig; fehlt einem Foto das EXIF-GPS, kann der Ort über eine eingebettete Karte gesetzt werden
-- **Fotos verwalten** – bestehende Fotos durchsuchen (Ort/Dateiname), löschen oder deren GPS-Position nachträglich korrigieren
+- **Fotos verwalten** – bestehende Fotos durchsuchen (Ort/Dateiname), löschen, deren GPS-Position korrigieren, eine Notiz hinterlegen oder als Favorit markieren
 - **Besucher** – Gesamtzahl, aktuell aktive Besucher und ein 30-Tage-Verlauf als Chart
 
 ---
@@ -201,7 +209,7 @@ travelsite/
 │   ├── admin-login.js       # Login-Formular auf /admin
 │   ├── admin-main.js        # Einstiegspunkt der /admin-Ansicht
 │   ├── admin-upload.js      # Upload-Feature (Karte für /admin)
-│   ├── admin-manage.js      # Fotos durchsuchen/löschen/GPS korrigieren
+│   ├── admin-manage.js      # Fotos durchsuchen/löschen/GPS korrigieren, Notiz & Favorit
 │   ├── admin-visitors.js    # Besucher-Dashboard mit SVG-Chart
 │   └── style.css            # Dark-Mode Design
 └── tests/
@@ -216,4 +224,4 @@ travelsite/
 ## Lizenz & Credits
 
 Erstellt von Alex.
-Verwendet [MapLibre GL JS](https://maplibre.org/) für die Karte, [MapTiler](https://www.maptiler.com/) für Terrain und Kartenstil, [OpenStreetMap](https://www.openstreetmap.org/) und [OSRM](https://project-osrm.org/) für Geodaten und Routing sowie [exifr](https://github.com/MikeKovarik/exifr) zum clientseitigen Auslesen von GPS-Daten beim Upload.
+Verwendet [MapLibre GL JS](https://maplibre.org/) für die Karte, [MapTiler](https://www.maptiler.com/) für Terrain und Kartenstil, [OpenStreetMap](https://www.openstreetmap.org/) und [OSRM](https://project-osrm.org/) für Geodaten und Routing, [Open-Meteo](https://open-meteo.com/) für historische Wetterdaten sowie [exifr](https://github.com/MikeKovarik/exifr) zum clientseitigen Auslesen von GPS-Daten beim Upload.

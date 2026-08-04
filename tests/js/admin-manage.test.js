@@ -4,10 +4,12 @@ vi.mock('../../static/api.js', () => ({
     fetchAdminPhotos: vi.fn(),
     deletePhoto:      vi.fn(),
     updateLocation:   vi.fn(),
+    updateNote:       vi.fn(),
+    setFavorite:      vi.fn(),
 }));
 
 import { AdminPhotoManager } from '../../static/admin-manage.js';
-import { fetchAdminPhotos, deletePhoto, updateLocation } from '../../static/api.js';
+import { fetchAdminPhotos, deletePhoto, updateLocation, updateNote, setFavorite } from '../../static/api.js';
 
 function makeMockMap() {
     return {
@@ -207,6 +209,95 @@ describe('_confirmFix', () => {
 
         expect(alert).toHaveBeenCalled();
         expect(updateLocation).not.toHaveBeenCalled();
+    });
+});
+
+describe('Favorit-Button', () => {
+    it('markiert ein Foto als Favorit und aktualisiert den Button', async () => {
+        setFavorite.mockResolvedValue();
+        const mgr = await makeManager();
+        const photo = { ...PHOTOS[0], is_favorite: false };
+        mgr._render([photo]);
+
+        const favBtn = mgr._dom.list.querySelector('.admin-fav-btn');
+        expect(favBtn.classList.contains('active')).toBe(false);
+
+        favBtn.click();
+        await vi.waitFor(() => expect(setFavorite).toHaveBeenCalledWith('a.jpg', true));
+
+        expect(favBtn.classList.contains('active')).toBe(true);
+        expect(photo.is_favorite).toBe(true);
+    });
+
+    it('entfernt die Favoriten-Markierung bei erneutem Klick', async () => {
+        setFavorite.mockResolvedValue();
+        const mgr = await makeManager();
+        const photo = { ...PHOTOS[0], is_favorite: true };
+        mgr._render([photo]);
+
+        const favBtn = mgr._dom.list.querySelector('.admin-fav-btn');
+        expect(favBtn.classList.contains('active')).toBe(true);
+
+        favBtn.click();
+        await vi.waitFor(() => expect(setFavorite).toHaveBeenCalledWith('a.jpg', false));
+
+        expect(favBtn.classList.contains('active')).toBe(false);
+    });
+
+    it('zeigt einen Alert, wenn das Speichern fehlschlägt', async () => {
+        setFavorite.mockRejectedValue(new Error('Netzwerkfehler'));
+        const mgr = await makeManager();
+        mgr._render([{ ...PHOTOS[0], is_favorite: false }]);
+
+        mgr._dom.list.querySelector('.admin-fav-btn').click();
+        await vi.waitFor(() => expect(alert).toHaveBeenCalledWith('Netzwerkfehler'));
+    });
+});
+
+describe('Notiz-Editor', () => {
+    it('ist zunächst eingeklappt und öffnet sich per Klick auf den Notiz-Button', async () => {
+        const mgr = await makeManager();
+        mgr._render([PHOTOS[0]]);
+
+        const editor = mgr._dom.list.querySelector('.admin-note-editor');
+        expect(editor.style.display).toBe('none');
+
+        mgr._dom.list.querySelector('.admin-note-btn').click();
+        expect(editor.style.display).toBe('flex');
+    });
+
+    it('zeigt eine vorhandene Notiz im Textfeld an', async () => {
+        const mgr = await makeManager();
+        mgr._render([{ ...PHOTOS[0], note: 'Tolles Restaurant hier gefunden' }]);
+
+        const textarea = mgr._dom.list.querySelector('.admin-note-input');
+        expect(textarea.value).toBe('Tolles Restaurant hier gefunden');
+    });
+
+    it('speichert eine neue Notiz und klappt den Editor danach zu', async () => {
+        updateNote.mockResolvedValue();
+        const mgr = await makeManager();
+        const photo = { ...PHOTOS[0], note: null };
+        mgr._render([photo]);
+
+        const editor = mgr._dom.list.querySelector('.admin-note-editor');
+        const textarea = editor.querySelector('.admin-note-input');
+        textarea.value = 'Neue Notiz';
+
+        editor.querySelector('.admin-note-save-btn').click();
+        await vi.waitFor(() => expect(updateNote).toHaveBeenCalledWith('a.jpg', 'Neue Notiz'));
+
+        expect(photo.note).toBe('Neue Notiz');
+        expect(editor.style.display).toBe('none');
+    });
+
+    it('zeigt einen Alert, wenn das Speichern der Notiz fehlschlägt', async () => {
+        updateNote.mockRejectedValue(new Error('Notiz zu lang'));
+        const mgr = await makeManager();
+        mgr._render([PHOTOS[0]]);
+
+        mgr._dom.list.querySelector('.admin-note-save-btn').click();
+        await vi.waitFor(() => expect(alert).toHaveBeenCalledWith('Notiz zu lang'));
     });
 });
 
