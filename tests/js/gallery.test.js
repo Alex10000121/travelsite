@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GalleryController } from '../../static/gallery.js';
 
-// Alle DOM-Referenzen auf null setzen.
 // _bindTouch und _bindFullscreen prüfen auf null und kehren dann sofort zurück.
 // _bindKeyboard fügt einen keydown-Listener auf document hinzu — funktioniert
 // problemlos in happy-dom.

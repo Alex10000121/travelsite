@@ -1,4 +1,4 @@
-import { encodeFilenamePath } from './filename-utils.js';
+import { buildThumbUrl } from './filename-utils.js';
 
 const MAPTILER_KEY = document.body.dataset.maptilerKey || '';
 const MAPTILER_STYLE_URL = MAPTILER_KEY
@@ -149,6 +149,8 @@ export class MapController {
             }
         });
 
+        // MapLibre wirft eigene 'error'-Events z.B. bei einzelnen fehlgeschlagenen Tile-
+        // Requests - ohne Handler landen die als unhandled rejection in der Konsole.
         this._map.on('error', () => {});
 
         // Standard-Muster fuer HTML-Marker auf geclusterten GeoJSON-Punkten: es gibt
@@ -237,7 +239,10 @@ export class MapController {
                     'fill-extrusion-vertical-gradient': true
                 }
             });
-        } catch (_) {}
+        } catch (_) {
+            // Layer-ID kann bei ungewoehnlichen Styles bereits belegt sein o.ae. - dann
+            // eben keine 3D-Gebaeude statt die ganze Karteninitialisierung abzubrechen.
+        }
     }
 
     _setupSources() {
@@ -334,7 +339,9 @@ export class MapController {
         try {
             const zoom = await this._map.getSource('photos').getClusterExpansionZoom(clusterId);
             this._map.easeTo({ center, zoom });
-        } catch (_) {}
+        } catch (_) {
+            // Cluster kann zwischenzeitlich verschwunden sein (Re-Cluster bei Zoom/Pan) - dann einfach nichts tun.
+        }
     }
 
     _buildPhotosGeoJSON() {
@@ -387,7 +394,7 @@ export class MapController {
      * Cluster-Punkte selbst werden von _syncClusterMarkers behandelt.
      */
     _syncPhotoMarkers() {
-        if (!this._mapReady || !this._pinsVisible || !this._map.isSourceLoaded('photos')) return;
+        if (!this._canSyncMarkers()) return;
 
         const features = this._map.queryRenderedFeatures(undefined, { layers: ['unclustered-point'] });
         const visibleIndices = new Set(features.map(f => f.properties.index));
@@ -404,23 +411,14 @@ export class MapController {
             el.className = 'photo-marker';
             if (index === this._activeIndex) el.classList.add('active');
 
-            const img = document.createElement('img');
-            img.src = `/api/thumb/${encodeFilenamePath(photo.filename)}?token=${this._token ?? ''}&size=blur`;
-            img.loading = 'lazy';
-            img.alt = '';
-            // Faellt ein Thumbnail aus (z.B. geloeschtes Foto), soll die
-            // Hintergrundfarbe des Pins durchscheinen statt eines kaputten Bild-Icons.
-            img.addEventListener('error', () => { img.style.display = 'none'; });
-            el.appendChild(img);
+            el.appendChild(this._createPinImage(this._thumbUrl(photo.filename)));
 
             el.addEventListener('click', () => {
                 this._spinOnNextMoveEnd = true;
                 this._onMarkerClick?.(index);
             });
 
-            const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-                .setLngLat(feature.geometry.coordinates)
-                .addTo(this._map);
+            const marker = this._addHtmlMarker(el, feature.geometry.coordinates);
 
             this._photoMarkers.set(index, marker);
         }
@@ -434,7 +432,7 @@ export class MapController {
      * befuellt, damit Zoomen/Schwenken nicht auf jeden Cluster-Request warten muss.
      */
     _syncClusterMarkers() {
-        if (!this._mapReady || !this._pinsVisible || !this._map.isSourceLoaded('photos')) return;
+        if (!this._canSyncMarkers()) return;
 
         const features = this._map.queryRenderedFeatures(undefined, { layers: ['clusters'] });
         const visibleIds = new Set(features.map(f => f.properties.cluster_id));
@@ -449,10 +447,7 @@ export class MapController {
             const el = document.createElement('div');
             el.className = 'photo-marker cluster-marker';
 
-            const img = document.createElement('img');
-            img.loading = 'lazy';
-            img.alt = '';
-            img.addEventListener('error', () => { img.style.display = 'none'; });
+            const img = this._createPinImage();
             el.appendChild(img);
 
             const badge = document.createElement('span');
@@ -463,25 +458,58 @@ export class MapController {
             const coordinates = feature.geometry.coordinates.slice();
             el.addEventListener('click', () => this._expandCluster(clusterId, coordinates));
 
-            const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-                .setLngLat(coordinates)
-                .addTo(this._map);
+            const marker = this._addHtmlMarker(el, coordinates);
 
             this._clusterMarkers.set(clusterId, marker);
 
-            this._map.getSource('photos').getClusterLeaves(clusterId, 1, 0).then(leaves => {
-                if (!leaves?.length) return;
-                // Zwischenzeitlich neu gezoomt/verschoben? Dann gehoert diese ID
-                // inzwischen ggf. zu einem komplett anderen Cluster - nicht mehr
-                // in den (ausgetauschten) Marker schreiben.
-                if (this._clusterMarkers.get(clusterId) !== marker) return;
-
-                const leafPhoto = this._photos[leaves[0].properties.index];
-                if (leafPhoto) {
-                    img.src = `/api/thumb/${encodeFilenamePath(leafPhoto.filename)}?token=${this._token ?? ''}&size=blur`;
-                }
-            }).catch(() => {});
+            this._fillClusterThumbnail(clusterId, marker, img);
         }
+    }
+
+    /** Laedt asynchron ein Vorschaubild fuer einen Cluster-Pin nach (siehe _syncClusterMarkers). */
+    async _fillClusterThumbnail(clusterId, marker, img) {
+        let leaves;
+        try {
+            leaves = await this._map.getSource('photos').getClusterLeaves(clusterId, 1, 0);
+        } catch (_) {
+            return;
+        }
+        if (!leaves?.length) return;
+
+        // Zwischenzeitlich neu gezoomt/verschoben? Dann gehoert diese ID inzwischen
+        // ggf. zu einem komplett anderen Cluster - nicht mehr in den (ausgetauschten)
+        // Marker schreiben.
+        if (this._clusterMarkers.get(clusterId) !== marker) return;
+
+        const leafPhoto = this._photos[leaves[0].properties.index];
+        if (leafPhoto) {
+            img.src = this._thumbUrl(leafPhoto.filename);
+        }
+    }
+
+    _canSyncMarkers() {
+        return this._mapReady && this._pinsVisible && this._map.isSourceLoaded('photos');
+    }
+
+    _thumbUrl(filename) {
+        return buildThumbUrl(filename, { token: this._token ?? '', size: 'blur' });
+    }
+
+    _createPinImage(src) {
+        const img = document.createElement('img');
+        if (src) img.src = src;
+        img.loading = 'lazy';
+        img.alt = '';
+        // Faellt ein Thumbnail aus (z.B. geloeschtes Foto), soll die
+        // Hintergrundfarbe des Pins durchscheinen statt eines kaputten Bild-Icons.
+        img.addEventListener('error', () => { img.style.display = 'none'; });
+        return img;
+    }
+
+    _addHtmlMarker(el, coordinates) {
+        return new maplibregl.Marker({ element: el, anchor: 'center' })
+            .setLngLat(coordinates)
+            .addTo(this._map);
     }
 
     _pruneMarkers(markerMap, visibleKeys) {

@@ -44,6 +44,12 @@ async function makeManager(mapOverride) {
     return mgr;
 }
 
+async function loadFreshManager() {
+    const mgr = new AdminPhotoManager(makeDom(), makeMockMap());
+    await mgr.load();
+    return mgr;
+}
+
 const PHOTOS = [
     { filename: 'a.jpg', lat: 48.8, lon: 2.3,  location: 'Paris, FR',  date_str: '01.01.2024' },
     { filename: 'b.jpg', lat: 52.5, lon: 13.4, location: 'Berlin, DE', date_str: '02.01.2024' },
@@ -78,27 +84,24 @@ describe('_render', () => {
 describe('load', () => {
     it('zeigt einen Alert wenn das Laden fehlschlägt', async () => {
         fetchAdminPhotos.mockRejectedValue(new Error('Netzwerkfehler'));
-        const mgr = new AdminPhotoManager(makeDom(), makeMockMap());
 
-        await mgr.load();
+        await loadFreshManager();
 
         expect(alert).toHaveBeenCalledWith('Netzwerkfehler');
     });
 
     it('blendet den Weitere-laden-Button ein, solange noch Seiten fehlen', async () => {
         fetchAdminPhotos.mockResolvedValue({ photos: PHOTOS, total: 5, offset: 0, limit: 2 });
-        const mgr = new AdminPhotoManager(makeDom(), makeMockMap());
 
-        await mgr.load();
+        const mgr = await loadFreshManager();
 
         expect(mgr._dom.loadMoreBtn.style.display).toBe('');
     });
 
     it('blendet den Weitere-laden-Button aus, sobald alle Seiten geladen sind', async () => {
         fetchAdminPhotos.mockResolvedValue({ photos: PHOTOS, total: 2, offset: 0, limit: 60 });
-        const mgr = new AdminPhotoManager(makeDom(), makeMockMap());
 
-        await mgr.load();
+        const mgr = await loadFreshManager();
 
         expect(mgr._dom.loadMoreBtn.style.display).toBe('none');
     });

@@ -1,7 +1,8 @@
 // Foto-Anzeige, Navigation, Swipe-Gesten und Tastatur-Events.
 // Keine Abhängigkeit zu Leaflet oder API.
 
-import { encodeFilenamePath } from './filename-utils.js';
+import { buildThumbUrl } from './filename-utils.js';
+import { renderInto, createLazyImage } from './dom-utils.js';
 
 // WMO-Wettercode -> Emoji (Open-Meteo liefert den Rohcode, siehe fetch_weather in app.py).
 // Nur grobe Kategorien, kein Anspruch auf Vollstaendigkeit aller ~30 WMO-Codes.
@@ -123,29 +124,34 @@ export class GalleryController {
             // Rückwärts: zum Anfang des vorherigen Landes springen
 
             // Schritt 1: Anfang des aktuellen Landes finden
-            while (steps < total) {
-                const prev = (index - 1 + total) % total;
-                if (photos[prev].countryCode !== currentCountry) break;
-                index = prev;
-                steps++;
-            }
+            index = this._findCountryStart(photos, index, currentCountry);
 
             // Schritt 2: ein weiteres Foto zurück = letztes Foto des Ziel-Landes
             index = (index - 1 + total) % total;
             const targetCountry = photos[index].countryCode;
 
             // Schritt 3: Anfang des Ziel-Landes suchen
-            steps = 0;
-            while (steps < total) {
-                const prev = (index - 1 + total) % total;
-                if (photos[prev].countryCode !== targetCountry) break;
-                index = prev;
-                steps++;
-            }
+            index = this._findCountryStart(photos, index, targetCountry);
 
             this._currentIndex = index;
             this._update();
         }
+    }
+
+    /**
+     * Läuft von index rückwärts, solange die Fotos zu country gehören,
+     * und gibt den Index des ersten Fotos dieses Landes zurück.
+     */
+    _findCountryStart(photos, index, country) {
+        const total = photos.length;
+        let steps = 0;
+        while (steps < total) {
+            const prev = (index - 1 + total) % total;
+            if (photos[prev].countryCode !== country) break;
+            index = prev;
+            steps++;
+        }
+        return index;
     }
 
     /**
@@ -190,22 +196,22 @@ export class GalleryController {
 
         clearTimeout(this._displayTimer);
         this._displayTimer = setTimeout(() => {
+            this._swapSrc(imgEl, url);
             if (imgEl) {
-                imgEl.src          = url;
-                imgEl.style.display = 'block';
-                imgEl.onload       = () => { imgEl.style.opacity = 1; };
-
                 // Ken-Burns-Animation pro Foto neu starten (sonst läuft sie einfach weiter/bleibt stehen)
                 imgEl.style.animation = 'none';
                 void imgEl.offsetWidth;
                 imgEl.style.animation = '';
             }
-            if (bgEl) {
-                bgEl.src          = blurUrl;
-                bgEl.style.display = 'block';
-                bgEl.onload       = () => { bgEl.style.opacity = 1; };
-            }
+            this._swapSrc(bgEl, blurUrl);
         }, 150);
+    }
+
+    _swapSrc(el, src) {
+        if (!el) return;
+        el.src           = src;
+        el.style.display = 'block';
+        el.onload        = () => { el.style.opacity = 1; };
     }
 
     _setText(el, text) {
@@ -213,8 +219,7 @@ export class GalleryController {
     }
 
     _thumbUrl(filename, size) {
-        const url = `/api/thumb/${encodeFilenamePath(filename)}?token=${this._token}`;
-        return size ? `${url}&size=${size}` : url;
+        return buildThumbUrl(filename, { token: this._token, size });
     }
 
     /**
@@ -299,30 +304,18 @@ export class GalleryController {
 
     /** Baut die Miniaturleiste einmal pro geladener Fotoliste auf. */
     _renderFilmstrip() {
-        const strip = this._dom.filmstrip;
-        if (!strip) return;
+        renderInto(this._dom.filmstrip, this._photos, (photo, i) => this._buildFilmstripItem(photo, i));
+    }
 
-        strip.innerHTML = '';
-        const fragment = document.createDocumentFragment();
-
-        this._photos.forEach((photo, i) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'filmstrip-item';
-            btn.dataset.index = String(i);
-            btn.setAttribute('role', 'option');
-            btn.setAttribute('aria-label', photo.location || `Foto ${i + 1}`);
-
-            const img = document.createElement('img');
-            img.src = this._thumbUrl(photo.filename, 'blur');
-            img.loading = 'lazy';
-            img.alt = '';
-
-            btn.appendChild(img);
-            fragment.appendChild(btn);
-        });
-
-        strip.appendChild(fragment);
+    _buildFilmstripItem(photo, i) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'filmstrip-item';
+        btn.dataset.index = String(i);
+        btn.setAttribute('role', 'option');
+        btn.setAttribute('aria-label', photo.location || `Foto ${i + 1}`);
+        btn.appendChild(createLazyImage(this._thumbUrl(photo.filename, 'blur')));
+        return btn;
     }
 
     /** Markiert das aktuelle Foto in der Filmstrip-Leiste und scrollt es in Sicht. */

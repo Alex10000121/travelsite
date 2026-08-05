@@ -4,12 +4,34 @@
 import { encodeFilenamePath } from './filename-utils.js';
 
 /**
+ * Führt fetch aus und bündelt Netzwerkfehler (DNS/Offline/CORS) in einen Error
+ * mit nutzerfreundlicher Nachricht, statt die rohe TypeError von fetch durchzureichen.
+ * @param {string} url
+ * @param {RequestInit} [options]
+ * @param {string|function(Error): string} networkErrorMessage - Text, oder Funktion die ihn aus dem Fehler baut
+ * @returns {Promise<Response>}
+ */
+async function safeFetch(url, options, networkErrorMessage) {
+    try {
+        return await fetch(url, options);
+    } catch (err) {
+        const message = typeof networkErrorMessage === 'function' ? networkErrorMessage(err) : networkErrorMessage;
+        throw new Error(message);
+    }
+}
+
+/** @returns {Promise<Object>} Geparster JSON-Body, oder {} falls die Antwort keinen (gültigen) JSON-Body hat. */
+async function parseJsonSafe(res) {
+    return res.json().catch(() => ({}));
+}
+
+/**
  * Lädt Reisestatistiken (km, Länder, Tage, Fotos) – leichtgewichtig, schnell.
  * @param {string} token
  * @returns {Promise<{total_km: number, countries: number, photo_count: number, days: number}>}
  */
 export async function fetchStats(token) {
-    const res = await fetch(`/api/stats?token=${token}`);
+    const res = await safeFetch(`/api/stats?token=${token}`, undefined, 'Verbindungsfehler beim Laden der Statistiken.');
     if (!res.ok) {
         throw new Error(`Fehler beim Laden der Statistiken (HTTP ${res.status})`);
     }
@@ -22,7 +44,7 @@ export async function fetchStats(token) {
  * @returns {Promise<{photos: Array, routes: Array}>}
  */
 export async function fetchRoute(token) {
-    const res = await fetch(`/api/route?token=${token}`);
+    const res = await safeFetch(`/api/route?token=${token}`, undefined, 'Verbindungsfehler beim Laden der Route.');
     if (!res.ok) {
         throw new Error(`Fehler beim Laden der Route (HTTP ${res.status})`);
     }
@@ -35,16 +57,11 @@ export async function fetchRoute(token) {
  * @returns {Promise<void>} - Löst auf bei Erfolg, wirft Error bei falschem Passwort oder Netzwerkfehler
  */
 export async function adminLogin(password) {
-    let res;
-    try {
-        res = await fetch('/admin/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ admin_token: password })
-        });
-    } catch (err) {
-        throw new Error('Verbindungsfehler zum Server.');
-    }
+    const res = await safeFetch('/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_token: password })
+    }, 'Verbindungsfehler zum Server.');
 
     if (!res.ok) {
         throw new Error('Falsches Passwort.');
@@ -57,17 +74,12 @@ export async function adminLogin(password) {
  * @returns {Promise<Object>} - Die JSON-Antwort des Servers (file, lat, lon, location, timestamp, …)
  */
 export async function uploadPhoto(formData) {
-    let res;
-    try {
-        res = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData
-        });
-    } catch (err) {
-        throw new Error(`Netzwerkfehler beim Upload: ${err.message}`);
-    }
+    const res = await safeFetch('/api/upload', {
+        method: 'POST',
+        body: formData
+    }, (err) => `Netzwerkfehler beim Upload: ${err.message}`);
 
-    const json = await res.json().catch(() => ({}));
+    const json = await parseJsonSafe(res);
 
     if (!res.ok) {
         const err = new Error(json.error || `Upload fehlgeschlagen (HTTP ${res.status})`);
@@ -85,19 +97,14 @@ export async function uploadPhoto(formData) {
  * @param {string} filename - Dateiname des Fotos
  * @param {number} lat - Breitengrad
  * @param {number} lon - Längengrad
- * @returns {Promise<void>} - Löst auf bei Erfolg, wirft Error bei Misserfolg
+ * @returns {Promise<void>}
  */
 export async function updateLocation(filename, lat, lon) {
-    let res;
-    try {
-        res = await fetch('/api/update_location', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename, lat, lon })
-        });
-    } catch (err) {
-        throw new Error(`Netzwerkfehler beim Speichern des Ortes: ${err.message}`);
-    }
+    const res = await safeFetch('/api/update_location', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, lat, lon })
+    }, (err) => `Netzwerkfehler beim Speichern des Ortes: ${err.message}`);
 
     if (!res.ok) {
         throw new Error(`Ort konnte nicht gespeichert werden (HTTP ${res.status}). Sitzung evtl. abgelaufen?`);
@@ -111,19 +118,14 @@ export async function updateLocation(filename, lat, lon) {
  * @returns {Promise<void>}
  */
 export async function updateNote(filename, note) {
-    let res;
-    try {
-        res = await fetch(`/api/admin/photos/${encodeFilenamePath(filename)}/note`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ note })
-        });
-    } catch (err) {
-        throw new Error(`Netzwerkfehler beim Speichern der Notiz: ${err.message}`);
-    }
+    const res = await safeFetch(`/api/admin/photos/${encodeFilenamePath(filename)}/note`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note })
+    }, (err) => `Netzwerkfehler beim Speichern der Notiz: ${err.message}`);
 
     if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
+        const json = await parseJsonSafe(res);
         throw new Error(json.error || `Notiz konnte nicht gespeichert werden (HTTP ${res.status}).`);
     }
 }
@@ -135,16 +137,11 @@ export async function updateNote(filename, note) {
  * @returns {Promise<void>}
  */
 export async function setFavorite(filename, favorite) {
-    let res;
-    try {
-        res = await fetch(`/api/admin/photos/${encodeFilenamePath(filename)}/favorite`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ favorite })
-        });
-    } catch (err) {
-        throw new Error(`Netzwerkfehler beim Speichern des Favoriten: ${err.message}`);
-    }
+    const res = await safeFetch(`/api/admin/photos/${encodeFilenamePath(filename)}/favorite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ favorite })
+    }, (err) => `Netzwerkfehler beim Speichern des Favoriten: ${err.message}`);
 
     if (!res.ok) {
         throw new Error(`Favorit konnte nicht gespeichert werden (HTTP ${res.status}).`);
@@ -170,13 +167,7 @@ function buildPaginationParams({ q = '', offset = 0 } = {}) {
 export async function fetchAdminPhotos({ q = '', offset = 0 } = {}) {
     const params = buildPaginationParams({ q, offset });
 
-    let res;
-    try {
-        res = await fetch(`/api/admin/photos?${params.toString()}`);
-    } catch (err) {
-        throw new Error('Verbindungsfehler beim Laden der Fotos.');
-    }
-
+    const res = await safeFetch(`/api/admin/photos?${params.toString()}`, undefined, 'Verbindungsfehler beim Laden der Fotos.');
     if (!res.ok) {
         throw new Error(`Fotos konnten nicht geladen werden (HTTP ${res.status}).`);
     }
@@ -189,12 +180,8 @@ export async function fetchAdminPhotos({ q = '', offset = 0 } = {}) {
  * @returns {Promise<void>}
  */
 export async function deletePhoto(filename) {
-    let res;
-    try {
-        res = await fetch(`/api/admin/photos/${encodeFilenamePath(filename)}`, { method: 'DELETE' });
-    } catch (err) {
-        throw new Error(`Netzwerkfehler beim Löschen: ${err.message}`);
-    }
+    const res = await safeFetch(`/api/admin/photos/${encodeFilenamePath(filename)}`, { method: 'DELETE' },
+        (err) => `Netzwerkfehler beim Löschen: ${err.message}`);
 
     if (!res.ok) {
         throw new Error(`Foto konnte nicht gelöscht werden (HTTP ${res.status}).`);
@@ -211,13 +198,7 @@ export async function deletePhoto(filename) {
 export async function fetchAdminRoutes({ offset = 0 } = {}) {
     const params = buildPaginationParams({ offset });
 
-    let res;
-    try {
-        res = await fetch(`/api/admin/routes?${params.toString()}`);
-    } catch (err) {
-        throw new Error('Verbindungsfehler beim Laden der Routen.');
-    }
-
+    const res = await safeFetch(`/api/admin/routes?${params.toString()}`, undefined, 'Verbindungsfehler beim Laden der Routen.');
     if (!res.ok) {
         throw new Error(`Routen konnten nicht geladen werden (HTTP ${res.status}).`);
     }
@@ -232,19 +213,14 @@ export async function fetchAdminRoutes({ offset = 0 } = {}) {
  * @returns {Promise<void>}
  */
 export async function setRouteMode(startFilename, endFilename, mode) {
-    let res;
-    try {
-        res = await fetch('/api/admin/routes/mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ start_filename: startFilename, end_filename: endFilename, mode })
-        });
-    } catch (err) {
-        throw new Error(`Netzwerkfehler beim Speichern des Modus: ${err.message}`);
-    }
+    const res = await safeFetch('/api/admin/routes/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_filename: startFilename, end_filename: endFilename, mode })
+    }, (err) => `Netzwerkfehler beim Speichern des Modus: ${err.message}`);
 
     if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
+        const json = await parseJsonSafe(res);
         throw new Error(json.error || `Modus konnte nicht gespeichert werden (HTTP ${res.status}).`);
     }
 }
@@ -255,13 +231,7 @@ export async function setRouteMode(startFilename, endFilename, mode) {
  * @returns {Promise<{total: number, active_now: number, daily: Array<{date: string, count: number}>}>}
  */
 export async function fetchVisitorStats() {
-    let res;
-    try {
-        res = await fetch('/api/admin/visitor-stats');
-    } catch (err) {
-        throw new Error('Verbindungsfehler beim Laden der Besucherzahlen.');
-    }
-
+    const res = await safeFetch('/api/admin/visitor-stats', undefined, 'Verbindungsfehler beim Laden der Besucherzahlen.');
     if (!res.ok) {
         throw new Error(`Besucherzahlen konnten nicht geladen werden (HTTP ${res.status}).`);
     }
@@ -279,13 +249,7 @@ export async function fetchVisitorStats() {
 export async function fetchAdminLog({ q = '', offset = 0 } = {}) {
     const params = buildPaginationParams({ q, offset });
 
-    let res;
-    try {
-        res = await fetch(`/api/admin/log?${params.toString()}`);
-    } catch (err) {
-        throw new Error('Verbindungsfehler beim Laden des Protokolls.');
-    }
-
+    const res = await safeFetch(`/api/admin/log?${params.toString()}`, undefined, 'Verbindungsfehler beim Laden des Protokolls.');
     if (!res.ok) {
         throw new Error(`Protokoll konnte nicht geladen werden (HTTP ${res.status}).`);
     }

@@ -2,6 +2,7 @@ import { fetchRoute, fetchStats } from './api.js';
 import { MapController }   from './map.js';
 import { GalleryController } from './gallery.js';
 import { createClickDispatcher } from './click-timer.js';
+import { renderInto } from './dom-utils.js';
 
 const TOKEN = document.body.dataset.token;
 if (!TOKEN) {
@@ -66,12 +67,9 @@ window.changePhoto    = (dir) => gallery.changePhoto(dir);
 window.changeLocation = (dir) => gallery.changeLocation(dir);
 
 async function init() {
-    fetchStats(TOKEN).then(stats => {
-        animateValue('stat-km',       0, stats.total_km, 1500);
-        setStatText('stat-countries', stats.countries);
-        setStatText('stat-days',       stats.days);
-        setStatText('stat-photos',     stats.photo_count);
-    }).catch(() => {});
+    // Bewusst nicht awaited: soll parallel zu fetchRoute laufen statt die
+    // (fuer die Kernfunktion nicht kritischen) Stats erst danach zu laden.
+    loadStats();
 
     try {
         const { photos, routes } = await fetchRoute(TOKEN);
@@ -92,6 +90,19 @@ async function init() {
 
     } catch (err) {
         console.error('Fehler beim Laden der Reisedaten:', err);
+    }
+}
+
+async function loadStats() {
+    try {
+        const stats = await fetchStats(TOKEN);
+        animateValue('stat-km',       0, stats.total_km, 1500);
+        setStatText('stat-countries', stats.countries);
+        setStatText('stat-days',       stats.days);
+        setStatText('stat-photos',     stats.photo_count);
+    } catch (_) {
+        // Stats sind nur ein "Nice-to-have" oben auf der Seite - ein Fehler hier
+        // soll die restliche App (Galerie/Karte) nicht beeintraechtigen.
     }
 }
 
@@ -162,38 +173,32 @@ function countryName(code) {
  * @param {Array<{code: string, count: number}>} countries
  */
 function renderCountryList(countries) {
-    const list = dom.countryList;
-    if (!list) return;
+    renderInto(dom.countryList, countries, buildCountryItem);
+}
 
-    list.innerHTML = '';
-    const fragment = document.createDocumentFragment();
+function buildCountryItem({ code, count }) {
+    const li = document.createElement('li');
 
-    for (const { code, count } of countries) {
-        const li = document.createElement('li');
+    const flag = document.createElement('img');
+    flag.className = 'country-flag';
+    flag.src = flagUrl(code);
+    flag.alt = '';
+    flag.loading = 'lazy';
+    flag.setAttribute('aria-hidden', 'true');
+    // Ungueltiger/unbekannter Code (z.B. Fallback-Koordinaten statt Ortsname) ->
+    // Bild durch den rohen Code ersetzen statt ein kaputtes Icon zu zeigen.
+    flag.addEventListener('error', () => { flag.replaceWith(document.createTextNode(code)); }, { once: true });
 
-        const flag = document.createElement('img');
-        flag.className = 'country-flag';
-        flag.src = flagUrl(code);
-        flag.alt = '';
-        flag.loading = 'lazy';
-        flag.setAttribute('aria-hidden', 'true');
-        // Ungueltiger/unbekannter Code (z.B. Fallback-Koordinaten statt Ortsname) ->
-        // Bild durch den rohen Code ersetzen statt ein kaputtes Icon zu zeigen.
-        flag.addEventListener('error', () => { flag.replaceWith(document.createTextNode(code)); }, { once: true });
+    const name = document.createElement('span');
+    name.className = 'country-name';
+    name.textContent = countryName(code);
 
-        const name = document.createElement('span');
-        name.className = 'country-name';
-        name.textContent = countryName(code);
+    const photoCount = document.createElement('span');
+    photoCount.className = 'country-count';
+    photoCount.textContent = `${count} Foto${count === 1 ? '' : 's'}`;
 
-        const photoCount = document.createElement('span');
-        photoCount.className = 'country-count';
-        photoCount.textContent = `${count} Foto${count === 1 ? '' : 's'}`;
-
-        li.append(flag, name, photoCount);
-        fragment.appendChild(li);
-    }
-
-    list.appendChild(fragment);
+    li.append(flag, name, photoCount);
+    return li;
 }
 
 function setStatText(id, value) {

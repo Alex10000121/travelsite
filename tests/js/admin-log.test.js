@@ -34,6 +34,11 @@ async function makeLog(page = emptyPage()) {
     return log;
 }
 
+function mockNextLoad(page = emptyPage()) {
+    fetchAdminLog.mockClear();
+    fetchAdminLog.mockResolvedValue(page);
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal('alert', vi.fn());
@@ -98,8 +103,7 @@ describe('load', () => {
     it('klickt man auf Weitere laden, wird ab dem aktuellen Offset weitergeladen', async () => {
         const log = await makeLog();
         log._offset = 50;
-        fetchAdminLog.mockClear();
-        fetchAdminLog.mockResolvedValue(emptyPage());
+        mockNextLoad();
 
         log._dom.loadMoreBtn.click();
         await vi.waitFor(() => expect(fetchAdminLog).toHaveBeenCalledWith({ q: '', offset: 50 }));
@@ -126,8 +130,7 @@ describe('Suche (_onSearchInput)', () => {
 
     it('lädt debounced neu ab Seite 1, sobald ins Suchfeld getippt wird', async () => {
         const log = await makeLog();
-        fetchAdminLog.mockClear();
-        fetchAdminLog.mockResolvedValue({ entries: [ENTRIES[1]], total: 1, offset: 0, limit: 50 });
+        mockNextLoad({ entries: [ENTRIES[1]], total: 1, offset: 0, limit: 50 });
 
         log._dom.searchInput.value = 'delete';
         log._dom.searchInput.dispatchEvent(new Event('input'));
@@ -141,8 +144,7 @@ describe('Suche (_onSearchInput)', () => {
 
     it('feuert bei schnellem Tippen nur eine Anfrage (Debounce)', async () => {
         const log = await makeLog();
-        fetchAdminLog.mockClear();
-        fetchAdminLog.mockResolvedValue(emptyPage());
+        mockNextLoad();
 
         for (const value of ['l', 'lo', 'log', 'logi']) {
             log._dom.searchInput.value = value;

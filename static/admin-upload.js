@@ -75,40 +75,41 @@ export class AdminUploadCard {
         for (let i = 0; i < totalFiles; i++) {
             if (progressText) progressText.innerText = `Lade Bild ${i + 1} von ${totalFiles} hoch...`;
 
-            const file = files[i];
-
-            let lat = null, lon = null;
-            const gpsFromExif = await readExifFromFile(file);
-            if (gpsFromExif) {
-                lat = gpsFromExif.lat;
-                lon = gpsFromExif.lon;
-            } else {
-                const picked = await this._pickLocation();
-                lat = picked.lat;
-                lon = picked.lon;
-            }
-
-            const formData = new FormData();
-            formData.append('photo', file);
-            formData.append('lat', lat);
-            formData.append('lon', lon);
-
-            try {
-                const json = await uploadPhoto(formData);
-                this._logEntry(`✔ ${file.name} → ${json.location || ''}`, true);
-            } catch (err) {
-                if (err.status === 403) {
-                    alert('Sitzung abgelaufen. Bitte erneut anmelden.');
-                    window.location.reload();
-                    return;
-                }
-                this._logEntry(`✘ ${file.name}: ${err.message}`, false);
-            }
+            const sessionExpired = await this._uploadFile(files[i]);
+            if (sessionExpired) return;
 
             if (progressFill) progressFill.style.width = `${Math.round(((i + 1) / totalFiles) * 100)}%`;
         }
 
         fileInput.value = '';
         if (progressWrap) progressWrap.style.display = 'none';
+    }
+
+    async _resolveLocation(file) {
+        const gpsFromExif = await readExifFromFile(file);
+        return gpsFromExif ?? this._pickLocation();
+    }
+
+    /** @returns {Promise<boolean>} true, wenn die Session abgelaufen ist und der Upload-Vorgang abgebrochen wurde. */
+    async _uploadFile(file) {
+        const { lat, lon } = await this._resolveLocation(file);
+
+        const formData = new FormData();
+        formData.append('photo', file);
+        formData.append('lat', lat);
+        formData.append('lon', lon);
+
+        try {
+            const json = await uploadPhoto(formData);
+            this._logEntry(`✔ ${file.name} → ${json.location || ''}`, true);
+        } catch (err) {
+            if (err.status === 403) {
+                alert('Sitzung abgelaufen. Bitte erneut anmelden.');
+                window.location.reload();
+                return true;
+            }
+            this._logEntry(`✘ ${file.name}: ${err.message}`, false);
+        }
+        return false;
     }
 }

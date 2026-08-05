@@ -2,6 +2,7 @@
 // Liniendiagramm der letzten 30 Tage (reines SVG, keine Chart-Bibliothek).
 
 import { fetchVisitorStats } from './api.js';
+import { tryOrAlert } from './dom-utils.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CHART_WIDTH = 600;
@@ -91,12 +92,10 @@ export class AdminVisitorStats {
     }
 
     async load() {
-        try {
+        await tryOrAlert(async () => {
             const stats = await fetchVisitorStats();
             this._render(stats);
-        } catch (err) {
-            alert(err.message);
-        }
+        });
     }
 
     _render(stats) {

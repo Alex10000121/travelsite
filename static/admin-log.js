@@ -3,6 +3,7 @@
 // Routen-Overrides. Serverseitig durchsuchbar und paginiert, analog zu admin-manage.js.
 
 import { fetchAdminLog } from './api.js';
+import { SEARCH_DEBOUNCE_MS, debounce, tryOrAlert, updateLoadMoreVisibility, renderInto, createSpan } from './dom-utils.js';
 
 const ACTION_LABELS = {
     login: 'Login',
@@ -16,8 +17,6 @@ const ACTION_LABELS = {
     delete_photo: 'Foto gelöscht',
     set_route_mode: 'Routen-Modus geändert',
 };
-
-const SEARCH_DEBOUNCE_MS = 300;
 
 export class AdminLog {
 
@@ -33,44 +32,32 @@ export class AdminLog {
         this._query = '';
         this._offset = 0;
         this._total = 0;
-        this._searchTimer = null;
+
+        const triggerSearch = debounce(() => {
+            this._query = dom.searchInput.value.trim();
+            this.load({ reset: true });
+        }, SEARCH_DEBOUNCE_MS);
 
         dom.loadMoreBtn?.addEventListener('click', () => this.load({ reset: false }));
-        dom.searchInput?.addEventListener('input', () => this._onSearchInput());
+        dom.searchInput?.addEventListener('input', triggerSearch);
 
         this.load();
     }
 
     async load({ reset = true } = {}) {
-        try {
-            const data = await fetchAdminLog({
+        await tryOrAlert(async () => {
+            const page = await fetchAdminLog({
                 q: this._query,
                 offset: reset ? 0 : this._offset,
             });
 
-            this._offset = data.offset + data.entries.length;
-            this._total = data.total;
+            this._offset = page.offset + page.entries.length;
+            this._total = page.total;
 
-            this._render(data.entries, { append: !reset });
-            this._updateLoadMoreVisibility();
+            this._render(page.entries, { append: !reset });
+            updateLoadMoreVisibility(this._dom.loadMoreBtn, this._offset, this._total);
             this._updateCount();
-        } catch (err) {
-            alert(err.message);
-        }
-    }
-
-    _onSearchInput() {
-        clearTimeout(this._searchTimer);
-        this._searchTimer = setTimeout(() => {
-            this._query = this._dom.searchInput.value.trim();
-            this.load({ reset: true });
-        }, SEARCH_DEBOUNCE_MS);
-    }
-
-    _updateLoadMoreVisibility() {
-        const { loadMoreBtn } = this._dom;
-        if (!loadMoreBtn) return;
-        loadMoreBtn.style.display = this._offset < this._total ? '' : 'none';
+        });
     }
 
     _updateCount() {
@@ -81,35 +68,19 @@ export class AdminLog {
             : `${this._offset} von ${this._total} Einträgen geladen`;
     }
 
-    _render(entries, { append = false } = {}) {
-        const { list } = this._dom;
-        if (!list) return;
-
-        if (!append) list.innerHTML = '';
-
-        const fragment = document.createDocumentFragment();
-        for (const entry of entries) {
-            fragment.appendChild(this._buildItem(entry));
-        }
-        list.appendChild(fragment);
+    _render(entries, opts) {
+        renderInto(this._dom.list, entries, (entry) => this._buildItem(entry), opts);
     }
 
     _buildItem(entry) {
         const li = document.createElement('li');
         li.className = 'admin-log-item';
 
-        const action = this._span('admin-log-action', ACTION_LABELS[entry.action] || entry.action);
-        const detail = this._span('admin-log-detail', entry.detail || '');
-        const time = this._span('admin-log-time', entry.datetime_str);
-
-        li.append(action, detail, time);
+        li.append(
+            createSpan('admin-log-action', ACTION_LABELS[entry.action] || entry.action),
+            createSpan('admin-log-detail', entry.detail || ''),
+            createSpan('admin-log-time', entry.datetime_str),
+        );
         return li;
-    }
-
-    _span(className, text) {
-        const el = document.createElement('span');
-        el.className = className;
-        el.textContent = text;
-        return el;
     }
 }

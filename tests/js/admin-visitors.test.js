@@ -19,8 +19,9 @@ const DAILY = [
 ];
 
 describe('buildChartPoints', () => {
+    const points = buildChartPoints(DAILY, 100, 50, 0);
+
     it('spreizt die Punkte gleichmäßig über die Breite', () => {
-        const points = buildChartPoints(DAILY, 100, 50, 0);
         expect(points).toHaveLength(3);
         expect(points[0].x).toBe(0);
         expect(points[1].x).toBe(50);
@@ -28,13 +29,11 @@ describe('buildChartPoints', () => {
     });
 
     it('setzt den höchsten Wert auf die oberste Position (kleinstes y)', () => {
-        const points = buildChartPoints(DAILY, 100, 50, 0);
         const maxPoint = points.find(p => p.count === 10);
         expect(maxPoint.y).toBe(0);
     });
 
     it('setzt einen Nullwert auf die Grundlinie', () => {
-        const points = buildChartPoints(DAILY, 100, 50, 0);
         const zeroPoint = points.find(p => p.count === 0);
         expect(zeroPoint.y).toBe(50);
     });
@@ -44,28 +43,28 @@ describe('buildChartPoints', () => {
     });
 
     it('platziert einen einzigen Punkt in der horizontalen Mitte', () => {
-        const points = buildChartPoints([{ date: '2026-07-01', count: 5 }], 100, 50, 0);
-        expect(points[0].x).toBe(50);
+        const singlePoint = buildChartPoints([{ date: '2026-07-01', count: 5 }], 100, 50, 0);
+        expect(singlePoint[0].x).toBe(50);
     });
 
     it('teilt nicht durch 0 wenn alle Zählwerte 0 sind', () => {
-        const points = buildChartPoints(
+        const zeroPoints = buildChartPoints(
             [{ date: 'a', count: 0 }, { date: 'b', count: 0 }], 100, 50, 0
         );
-        expect(points.every(p => Number.isFinite(p.y))).toBe(true);
+        expect(zeroPoints.every(p => Number.isFinite(p.y))).toBe(true);
     });
 });
 
 describe('buildChartPaths', () => {
+    const points = buildChartPoints(DAILY, 100, 50, 0);
+
     it('beginnt den Linienpfad mit M und den Rest mit L', () => {
-        const points = buildChartPoints(DAILY, 100, 50, 0);
         const { line } = buildChartPaths(points, 50);
         expect(line.startsWith('M')).toBe(true);
         expect(line.match(/L/g)).toHaveLength(2);
     });
 
     it('schließt den Flächenpfad an der Grundlinie unter erstem und letztem Punkt', () => {
-        const points = buildChartPoints(DAILY, 100, 50, 0);
         const { area } = buildChartPaths(points, 50);
         expect(area.endsWith('Z')).toBe(true);
         expect(area).toContain('L100.00,50');
