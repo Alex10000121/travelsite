@@ -1,5 +1,4 @@
 import os
-import pytest
 import piexif
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -86,8 +85,13 @@ class TestDecimalToDmsRational:
         assert result[2] == (0, 1000)
 
 
-def _make_jpeg_with_gps(path, lat, lon, date_str=None):
+def _make_plain_jpeg(path):
     Image.new('RGB', (100, 100)).save(str(path), format='JPEG')
+    return str(path)
+
+
+def _make_jpeg_with_gps(path, lat, lon, date_str=None):
+    _make_plain_jpeg(path)
     exif_dict = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
     exif_dict['GPS'] = {
         piexif.GPSIFD.GPSLatitudeRef:  b'N' if lat >= 0 else b'S',
@@ -146,7 +150,7 @@ class TestExtractExifData:
 
     def test_returns_none_for_image_without_exif(self, tmp_path):
         img_path = tmp_path / 'plain.jpg'
-        Image.new('RGB', (100, 100)).save(str(img_path), format='JPEG')
+        _make_plain_jpeg(img_path)
         ts, coords = extract_exif_data(str(img_path))
         assert ts is None
         assert coords is None
@@ -241,13 +245,10 @@ class TestDatabase:
 
 
 class TestIndexPhoto:
-    def _make_plain_jpeg(self, path):
-        Image.new('RGB', (100, 100)).save(str(path), format='JPEG')
-
     def test_photo_without_gps_is_moved_to_no_gps_dir(self, app):
         abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
         img_path = os.path.join(abs_photo_dir, 'plain_photo.jpg')
-        self._make_plain_jpeg(Path(img_path))
+        _make_plain_jpeg(Path(img_path))
 
         index_photo(img_path, abs_photo_dir)
 
@@ -257,7 +258,7 @@ class TestIndexPhoto:
     def test_photo_without_gps_is_not_inserted_into_db(self, app):
         abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
         img_path = os.path.join(abs_photo_dir, 'db_check.jpg')
-        self._make_plain_jpeg(Path(img_path))
+        _make_plain_jpeg(Path(img_path))
 
         index_photo(img_path, abs_photo_dir)
 
@@ -279,7 +280,7 @@ class TestIndexPhoto:
         no_gps_dir = os.path.join(abs_photo_dir, 'no_gps')
         os.makedirs(no_gps_dir, exist_ok=True)
         img_path = os.path.join(no_gps_dir, 'already_moved.jpg')
-        self._make_plain_jpeg(Path(img_path))
+        _make_plain_jpeg(Path(img_path))
 
         index_photo(img_path, abs_photo_dir)
 
@@ -293,7 +294,7 @@ class TestIndexPhoto:
         parallel zum Upload-Handler eingelesen werden (Race-Condition-Schutz)."""
         abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
         img_path = os.path.join(abs_photo_dir, '.upload_staging.jpg')
-        self._make_plain_jpeg(Path(img_path))
+        _make_plain_jpeg(Path(img_path))
 
         index_photo(img_path, abs_photo_dir)
 
@@ -306,7 +307,7 @@ class TestIndexPhoto:
         abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
         ea_path = os.path.join(abs_photo_dir, '@eaDir', 'thumb.jpg')
         os.makedirs(os.path.dirname(ea_path), exist_ok=True)
-        self._make_plain_jpeg(Path(ea_path))
+        _make_plain_jpeg(Path(ea_path))
 
         index_photo(ea_path, abs_photo_dir)
 

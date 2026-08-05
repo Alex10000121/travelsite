@@ -1,7 +1,6 @@
 import io
 import json
 import os
-import pytest
 from unittest.mock import patch, MagicMock
 
 
@@ -11,6 +10,21 @@ def _make_jpeg_bytes(color=0):
     Image.new('RGB', (100, 100), color=color).save(buf, format='JPEG')
     buf.seek(0)
     return buf
+
+
+def _upload_photo(client, filename, lat='48.0', lon='11.0', color=0):
+    return client.post('/api/upload', data={
+        'photo': (_make_jpeg_bytes(color=color), filename),
+        'lat': lat,
+        'lon': lon,
+    }, content_type='multipart/form-data')
+
+
+def _insert_photo(conn, filename, lat=48.0, lon=11.0, timestamp=1700000000.0, location='X'):
+    conn.execute(
+        "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+        (filename, lat, lon, timestamp, location)
+    )
 
 
 class TestIndexRoute:
@@ -202,13 +216,9 @@ class TestUploadWithFormCoords:
 
 class TestUploadIdempotency:
     def test_duplicate_filename_in_db_does_not_crash_upload(self, admin_client, app):
-        import app as flask_module
         from app import get_db
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('duplicate.jpg', 48.0, 11.0, 1700000000.0, 'München, DE')
-            )
+            _insert_photo(conn, 'duplicate.jpg', location='München, DE')
             conn.commit()
 
         response = admin_client.post('/api/upload', data={
@@ -224,10 +234,7 @@ class TestApiRouteNullTimestamp:
     def test_null_timestamp_in_db_does_not_crash(self, client):
         from app import get_db
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('null_ts.jpg', 48.0, 11.0, None, 'München, DE')
-            )
+            _insert_photo(conn, 'null_ts.jpg', timestamp=None, location='München, DE')
             conn.commit()
 
         response = client.get('/api/route?token=test_token')
@@ -301,11 +308,7 @@ class TestUploadResponseFields:
 
 class TestApiThumbLarge:
     def _upload(self, admin_client):
-        response = admin_client.post('/api/upload', data={
-            'photo': (_make_jpeg_bytes(color=(100, 149, 237)), 'fullscreen.jpg'),
-            'lat': '48.8566',
-            'lon': '2.3522',
-        }, content_type='multipart/form-data')
+        response = _upload_photo(admin_client, 'fullscreen.jpg', lat='48.8566', lon='2.3522', color=(100, 149, 237))
         assert response.status_code == 200
         return response.get_json()['file']
 
@@ -382,10 +385,7 @@ class TestUpdateLocation:
         from app import get_db
 
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('to_fix.jpg', 0.0, 0.0, 1700000000.0, 'Unbekannt')
-            )
+            _insert_photo(conn, 'to_fix.jpg', lat=0.0, lon=0.0, location='Unbekannt')
             conn.commit()
 
         response = admin_client.post('/api/update_location',
@@ -476,10 +476,7 @@ class TestUpdateFavorite:
     def _seed(self):
         from app import get_db
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('fav_test.jpg', 48.0, 11.0, 1700000000.0, 'München, DE')
-            )
+            _insert_photo(conn, 'fav_test.jpg', location='München, DE')
             conn.commit()
 
     def test_without_admin_session_returns_403(self, client):
@@ -536,14 +533,8 @@ class TestRouteMode:
         from app import get_db
         import json as json_module
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('r1.jpg', 48.0, 11.0, 1700000000.0, 'A')
-            )
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('r2.jpg', 48.1, 11.1, 1700000100.0, 'B')
-            )
+            _insert_photo(conn, 'r1.jpg', location='A')
+            _insert_photo(conn, 'r2.jpg', lat=48.1, lon=11.1, timestamp=1700000100.0, location='B')
             conn.execute(
                 "INSERT INTO routes (start_filename, end_filename, geometry, mode) VALUES (?, ?, ?, ?)",
                 ('r1.jpg', 'r2.jpg', json_module.dumps({'type': 'LineString', 'coordinates': [[11.0, 48.0], [11.1, 48.1]]}), 'drive')
@@ -594,10 +585,7 @@ class TestAdminPhotoList:
         from app import get_db
         with get_db() as conn:
             for i in range(n):
-                conn.execute(
-                    "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                    (f'{prefix}_{i}.jpg', 48.0, 2.0, 1700000000.0 + i, location)
-                )
+                _insert_photo(conn, f'{prefix}_{i}.jpg', lon=2.0, timestamp=1700000000.0 + i, location=location)
             conn.commit()
 
     def test_response_includes_pagination_fields(self, admin_client, app):
@@ -645,12 +633,7 @@ class TestAdminPhotoList:
 
 class TestAdminDeletePhoto:
     def _upload(self, admin_client, name='delete_me.jpg'):
-        response = admin_client.post('/api/upload', data={
-            'photo': (_make_jpeg_bytes(), name),
-            'lat': '48.0',
-            'lon': '11.0',
-        }, content_type='multipart/form-data')
-        return response.get_json()['file']
+        return _upload_photo(admin_client, name).get_json()['file']
 
     def test_without_session_returns_403(self, client):
         response = client.delete('/api/admin/photos/whatever.jpg')
@@ -707,12 +690,7 @@ class TestAdminDeletePhoto:
 
 class TestApiThumb:
     def _upload(self, admin_client, name='thumb_variants.jpg'):
-        response = admin_client.post('/api/upload', data={
-            'photo': (_make_jpeg_bytes(), name),
-            'lat': '48.0',
-            'lon': '11.0',
-        }, content_type='multipart/form-data')
-        return response.get_json()['file']
+        return _upload_photo(admin_client, name).get_json()['file']
 
     def test_default_size_returns_200(self, admin_client):
         uploaded_file = self._upload(admin_client)
@@ -815,10 +793,7 @@ class TestWeatherBackfill:
     def test_photos_without_timestamp_are_skipped(self, app):
         from app import get_db, start_weather_backfill_if_needed
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('no_ts.jpg', 48.0, 11.0, None, 'X')
-            )
+            _insert_photo(conn, 'no_ts.jpg', timestamp=None)
             conn.commit()
 
         with patch('app.requests.get') as mock_get:
@@ -846,14 +821,8 @@ class TestAdminRoutesList:
     def _seed_photos(self):
         from app import get_db
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('seg1.jpg', 48.0, 11.0, 1700000000.0, 'München, DE')
-            )
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('seg2.jpg', 48.1, 11.2, 1700000100.0, 'Augsburg, DE')
-            )
+            _insert_photo(conn, 'seg1.jpg', location='München, DE')
+            _insert_photo(conn, 'seg2.jpg', lat=48.1, lon=11.2, timestamp=1700000100.0, location='Augsburg, DE')
             conn.commit()
 
     def test_without_admin_session_returns_403(self, client):
@@ -890,10 +859,7 @@ class TestAdminRoutesList:
         from app import get_db
         with get_db() as conn:
             for i in range(5):
-                conn.execute(
-                    "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                    (f'p{i}.jpg', 48.0 + i * 0.1, 11.0, 1700000000.0 + i, 'X')
-                )
+                _insert_photo(conn, f'p{i}.jpg', lat=48.0 + i * 0.1, timestamp=1700000000.0 + i)
             conn.commit()
 
         response = admin_client.get('/api/admin/routes?offset=2')
@@ -907,14 +873,8 @@ class TestAdminSetRouteMode:
     def _seed_photos(self):
         from app import get_db
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('m1.jpg', 48.0, 11.0, 1700000000.0, 'A')
-            )
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('m2.jpg', 48.1, 11.1, 1700000100.0, 'B')
-            )
+            _insert_photo(conn, 'm1.jpg', location='A')
+            _insert_photo(conn, 'm2.jpg', lat=48.1, lon=11.1, timestamp=1700000100.0, location='B')
             conn.commit()
 
     def test_without_admin_session_returns_403(self, client):
@@ -962,14 +922,8 @@ class TestAdminSetRouteMode:
     def test_setting_drive_for_far_apart_photos_still_queries_osrm(self, admin_client, app):
         from app import get_db
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('far1.jpg', 52.52, 13.405, 1700000000.0, 'Berlin, DE')
-            )
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('far2.jpg', 48.8566, 2.3522, 1700000100.0, 'Paris, FR')
-            )
+            _insert_photo(conn, 'far1.jpg', lat=52.52, lon=13.405, location='Berlin, DE')
+            _insert_photo(conn, 'far2.jpg', lat=48.8566, lon=2.3522, timestamp=1700000100.0, location='Paris, FR')
             conn.commit()
 
         mock_resp = MagicMock()
@@ -1101,10 +1055,7 @@ class TestAdminLog:
     def test_update_location_is_logged(self, admin_client, app):
         from app import get_db
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('log_loc.jpg', 0.0, 0.0, 1700000000.0, 'Unbekannt')
-            )
+            _insert_photo(conn, 'log_loc.jpg', lat=0.0, lon=0.0, location='Unbekannt')
             conn.commit()
 
         admin_client.post('/api/update_location', data=json.dumps({
@@ -1118,10 +1069,7 @@ class TestAdminLog:
     def test_note_and_favorite_changes_are_logged(self, admin_client, app):
         from app import get_db
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('log_note.jpg', 48.0, 11.0, 1700000000.0, 'X')
-            )
+            _insert_photo(conn, 'log_note.jpg')
             conn.commit()
 
         admin_client.post('/api/admin/photos/log_note.jpg/note',
@@ -1137,14 +1085,8 @@ class TestAdminLog:
     def test_route_mode_change_is_logged(self, admin_client, app):
         from app import get_db
         with get_db() as conn:
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('log_r1.jpg', 48.0, 11.0, 1700000000.0, 'A')
-            )
-            conn.execute(
-                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-                ('log_r2.jpg', 48.1, 11.1, 1700000100.0, 'B')
-            )
+            _insert_photo(conn, 'log_r1.jpg', location='A')
+            _insert_photo(conn, 'log_r2.jpg', lat=48.1, lon=11.1, timestamp=1700000100.0, location='B')
             conn.commit()
 
         admin_client.post('/api/admin/routes/mode',

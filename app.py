@@ -133,16 +133,19 @@ if _db_dir:
     os.makedirs(_db_dir, exist_ok=True)
 
 
+EARTH_RADIUS_KM = 6371.0
+
+
 def calculate_distance(lat1, lon1, lat2, lon2):
     try:
-        R = 6371.0
         dlat = math.radians(lat2 - lat1)
         dlon = math.radians(lon2 - lon1)
         a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(
             dlon / 2) ** 2
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return R * c
-    except Exception:
+        return EARTH_RADIUS_KM * c
+    except (TypeError, ValueError) as e:
+        logger.warning(f"Distance calculation error ({lat1},{lon1}) -> ({lat2},{lon2}): {e}")
         return 0
 
 
@@ -161,10 +164,9 @@ def decimal_to_dms_rational(value):
     return ((degrees, 1), (minutes, 1), (seconds, 1000))
 
 
-def extract_exif_data(image_path):
+def _extract_exif_via_pil(image_path):
     timestamp = None
     coords = None
-
     try:
         with Image.open(image_path) as img:
             exif = img.getexif()
@@ -186,46 +188,63 @@ def extract_exif_data(image_path):
                         coords = (lat, lon)
     except Exception as e:
         logger.warning(f"PIL EXIF read error: {image_path}: {e}")
+    return timestamp, coords
 
+
+def _dms_rational_to_decimal(dms):
+    return dms[0][0] / dms[0][1] + dms[1][0] / (dms[1][1] * 60) + dms[2][0] / (dms[2][1] * 3600)
+
+
+def _extract_exif_via_piexif(image_path):
+    timestamp = None
+    coords = None
+    try:
+        exif_dict = piexif.load(image_path)
+
+        exif_ifd = exif_dict.get('Exif', {})
+        date_bytes = exif_ifd.get(piexif.ExifIFD.DateTimeOriginal)
+        if date_bytes:
+            try:
+                date_str = date_bytes.decode('utf-8').strip('\x00')
+                dt = datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
+                timestamp = dt.timestamp()
+            except (ValueError, UnicodeDecodeError):
+                pass
+
+        gps = exif_dict.get('GPS', {})
+        if piexif.GPSIFD.GPSLatitude in gps and piexif.GPSIFD.GPSLongitude in gps:
+            lat = _dms_rational_to_decimal(gps[piexif.GPSIFD.GPSLatitude])
+            lon = _dms_rational_to_decimal(gps[piexif.GPSIFD.GPSLongitude])
+            if gps.get(piexif.GPSIFD.GPSLatitudeRef, b'N') in (b'S', 'S'): lat = -lat
+            if gps.get(piexif.GPSIFD.GPSLongitudeRef, b'E') in (b'W', 'W'): lon = -lon
+            if math.isfinite(lat) and math.isfinite(lon):
+                coords = (lat, lon)
+    except Exception as e:
+        logger.warning(f"piexif read error: {image_path}: {e}")
+    return timestamp, coords
+
+
+def extract_exif_data(image_path):
+    timestamp, coords = _extract_exif_via_pil(image_path)
     if not timestamp or not coords:
-        try:
-            exif_dict = piexif.load(image_path)
-
-            if not timestamp:
-                exif_ifd = exif_dict.get('Exif', {})
-                date_bytes = exif_ifd.get(piexif.ExifIFD.DateTimeOriginal)
-                if date_bytes:
-                    try:
-                        date_str = date_bytes.decode('utf-8').strip('\x00')
-                        dt = datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
-                        timestamp = dt.timestamp()
-                    except (ValueError, UnicodeDecodeError):
-                        pass
-
-            if not coords:
-                gps = exif_dict.get('GPS', {})
-                if piexif.GPSIFD.GPSLatitude in gps and piexif.GPSIFD.GPSLongitude in gps:
-                    def _r(v): return v[0][0] / v[0][1] + v[1][0] / (v[1][1] * 60) + v[2][0] / (v[2][1] * 3600)
-                    lat = _r(gps[piexif.GPSIFD.GPSLatitude])
-                    lon = _r(gps[piexif.GPSIFD.GPSLongitude])
-                    if gps.get(piexif.GPSIFD.GPSLatitudeRef, b'N') in (b'S', 'S'): lat = -lat
-                    if gps.get(piexif.GPSIFD.GPSLongitudeRef, b'E') in (b'W', 'W'): lon = -lon
-                    if math.isfinite(lat) and math.isfinite(lon):
-                        coords = (lat, lon)
-        except Exception as e:
-            logger.warning(f"piexif read error: {image_path}: {e}")
-
+        # PIL deckt die meisten Faelle ab, piexif liest aber auch Formate/Tags, die
+        # PIL.Image.getexif() nicht immer vollstaendig erschliesst - Fallback fuellt
+        # nur die noch fehlenden Werte, ueberschreibt nichts bereits Gefundenes.
+        piexif_timestamp, piexif_coords = _extract_exif_via_piexif(image_path)
+        timestamp = timestamp or piexif_timestamp
+        coords = coords or piexif_coords
     return timestamp, coords
 
 
 def get_location_name(lat, lon):
-    if lat is None or lon is None: return "Unbekannt"
+    if lat is None or lon is None:
+        return "Unbekannt"
     try:
         results = rg.search((lat, lon))
         if results:
             return f"{results[0]['name']}, {results[0]['cc']}"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Reverse geocoding error ({lat},{lon}): {e}")
     return "Unbekannt"
 
 
@@ -289,33 +308,41 @@ def straight_line_geometry(lat1, lon1, lat2, lon2):
     return {"type": "LineString", "coordinates": [[lon1, lat1], [lon2, lat2]]}
 
 
+def _route_already_cached(start_fn, end_fn):
+    with get_db() as conn:
+        return conn.execute(
+            "SELECT 1 FROM routes WHERE start_filename=? AND end_filename=?",
+            (start_fn, end_fn)
+        ).fetchone() is not None
+
+
+def _fetch_and_store_route(start_fn, end_fn, lat1, lon1, lat2, lon2):
+    if _route_already_cached(start_fn, end_fn):
+        return
+
+    geometry = fetch_osrm_route(lat1, lon1, lat2, lon2)
+    # Kein OSRM-Ergebnis (zu weit fuer die Driving-API oder API-Fehler) heisst in
+    # der Praxis fast immer: das war ein Flug, keine Autostrecke - automatisch aus
+    # dem vorhandenen Distanz-Heuristik abgeleitet, ohne manuelles Nachpflegen.
+    mode = 'drive'
+    if geometry is None:
+        geometry = straight_line_geometry(lat1, lon1, lat2, lon2)
+        mode = 'flight'
+
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO routes (start_filename, end_filename, geometry, mode) VALUES (?, ?, ?, ?)",
+            (start_fn, end_fn, json.dumps(geometry), mode)
+        )
+
+    if calculate_distance(lat1, lon1, lat2, lon2) <= OSRM_MAX_KM:
+        time.sleep(1)
+
+
 def fetch_missing_routes(missing_pairs):
     for start_fn, end_fn, lat1, lon1, lat2, lon2 in missing_pairs:
         try:
-            with get_db() as conn:
-                if conn.execute(
-                    "SELECT 1 FROM routes WHERE start_filename=? AND end_filename=?",
-                    (start_fn, end_fn)
-                ).fetchone():
-                    continue
-
-            geometry = fetch_osrm_route(lat1, lon1, lat2, lon2)
-            # Kein OSRM-Ergebnis (zu weit fuer die Driving-API oder API-Fehler) heisst in
-            # der Praxis fast immer: das war ein Flug, keine Autostrecke - automatisch aus
-            # dem vorhandenen Distanz-Heuristik abgeleitet, ohne manuelles Nachpflegen.
-            mode = 'drive'
-            if geometry is None:
-                geometry = straight_line_geometry(lat1, lon1, lat2, lon2)
-                mode = 'flight'
-
-            with get_db() as conn:
-                conn.execute(
-                    "INSERT OR IGNORE INTO routes (start_filename, end_filename, geometry, mode) VALUES (?, ?, ?, ?)",
-                    (start_fn, end_fn, json.dumps(geometry), mode)
-                )
-
-            if calculate_distance(lat1, lon1, lat2, lon2) <= OSRM_MAX_KM:
-                time.sleep(1)
+            _fetch_and_store_route(start_fn, end_fn, lat1, lon1, lat2, lon2)
         except Exception as e:
             logger.warning(f"Route background fetch error {start_fn} -> {end_fn}: {e}")
 
@@ -538,20 +565,42 @@ def track_visitor_count():
     return total
 
 
-def index_photo(full_path, abs_photo_dir):
+def _is_indexing_candidate(full_path):
     norm = full_path.replace('\\', '/')
     if '@eaDir' in norm or '/no_gps/' in norm or norm.endswith('/no_gps'):
-        return
+        return False
     if os.path.basename(full_path).startswith('.'):
         # Staging-Dateien von /api/upload (siehe dort) - werden erst nach
         # vollstaendiger Verarbeitung ohne Punkt-Praefix eingeblendet.
-        return
-    if not full_path.lower().endswith(SUPPORTED_EXTENSIONS):
-        return
+        return False
+    return full_path.lower().endswith(SUPPORTED_EXTENSIONS)
 
+
+def _relative_photo_path(full_path, abs_photo_dir):
     rel_path = os.path.relpath(full_path, abs_photo_dir).replace('\\', '/')
     if rel_path.startswith('./'):
         rel_path = rel_path[2:]
+    return rel_path
+
+
+def _move_to_no_gps(full_path, abs_photo_dir):
+    no_gps_dir = os.path.join(abs_photo_dir, 'no_gps')
+    os.makedirs(no_gps_dir, exist_ok=True)
+    dest = os.path.join(no_gps_dir, os.path.basename(full_path))
+    if os.path.exists(dest):
+        # Gleichnamige Datei liegt schon in no_gps/ - nicht stillschweigend
+        # überschreiben, sondern mit eindeutigem Suffix daneben ablegen.
+        base, ext = os.path.splitext(os.path.basename(full_path))
+        dest = os.path.join(no_gps_dir, f"{base}_{secrets.token_hex(4)}{ext}")
+    os.replace(full_path, dest)
+    logger.info(f"Moved to no_gps: {os.path.basename(dest)}")
+
+
+def index_photo(full_path, abs_photo_dir):
+    if not _is_indexing_candidate(full_path):
+        return
+
+    rel_path = _relative_photo_path(full_path, abs_photo_dir)
 
     try:
         with get_db() as conn:
@@ -564,16 +613,7 @@ def index_photo(full_path, abs_photo_dir):
             timestamp, coords = extract_exif_data(full_path)
 
             if not coords:
-                no_gps_dir = os.path.join(abs_photo_dir, 'no_gps')
-                os.makedirs(no_gps_dir, exist_ok=True)
-                dest = os.path.join(no_gps_dir, os.path.basename(full_path))
-                if os.path.exists(dest):
-                    # Gleichnamige Datei liegt schon in no_gps/ - nicht stillschweigend
-                    # überschreiben, sondern mit eindeutigem Suffix daneben ablegen.
-                    base, ext = os.path.splitext(os.path.basename(full_path))
-                    dest = os.path.join(no_gps_dir, f"{base}_{secrets.token_hex(4)}{ext}")
-                os.replace(full_path, dest)
-                logger.info(f"Moved to no_gps: {os.path.basename(dest)}")
+                _move_to_no_gps(full_path, abs_photo_dir)
                 return
 
             lat, lon = coords
@@ -771,6 +811,36 @@ def api_stats():
     })
 
 
+def _build_routes_for_photos(photos, route_cache):
+    routes = []
+    missing_pairs = []
+
+    for i, photo in enumerate(photos):
+        if i == 0:
+            continue
+
+        p1 = photos[i - 1]
+        lat1, lon1 = p1.get('lat'), p1.get('lon')
+        lat2, lon2 = photo.get('lat'), photo.get('lon')
+
+        if lat1 is None or lon1 is None or lat2 is None or lon2 is None or lat1 == 0 or lat2 == 0:
+            routes.append(None)
+            continue
+
+        cached = route_cache.get((p1['filename'], photo['filename']))
+        if cached:
+            routes.append(cached)
+            continue
+
+        # Vorlaeufiger Platzhalter, bis der Hintergrund-Fetch unten die
+        # richtige Geometrie/den Modus in die DB schreibt.
+        guessed_mode = 'flight' if calculate_distance(lat1, lon1, lat2, lon2) > OSRM_MAX_KM else 'drive'
+        routes.append({'geometry': straight_line_geometry(lat1, lon1, lat2, lon2), 'mode': guessed_mode})
+        missing_pairs.append((p1['filename'], photo['filename'], lat1, lon1, lat2, lon2))
+
+    return routes, missing_pairs
+
+
 @app.route('/api/route')
 @limiter.limit("30 per minute")
 def api_route():
@@ -798,30 +868,7 @@ def api_route():
         for r in route_rows
     }
 
-    routes = []
-    missing_pairs = []
-
-    if photos:
-        for i, photo in enumerate(photos):
-            if i > 0:
-                p1 = photos[i - 1]
-                lat1, lon1 = p1.get('lat'), p1.get('lon')
-                lat2, lon2 = photo.get('lat'), photo.get('lon')
-
-                if (lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None
-                        and lat1 != 0 and lat2 != 0):
-                    key = (p1['filename'], photo['filename'])
-                    cached = route_cache.get(key)
-                    if cached:
-                        routes.append(cached)
-                    else:
-                        # Vorlaeufiger Platzhalter, bis der Hintergrund-Fetch unten die
-                        # richtige Geometrie/den Modus in die DB schreibt.
-                        guessed_mode = 'flight' if calculate_distance(lat1, lon1, lat2, lon2) > OSRM_MAX_KM else 'drive'
-                        routes.append({'geometry': straight_line_geometry(lat1, lon1, lat2, lon2), 'mode': guessed_mode})
-                        missing_pairs.append((p1['filename'], photo['filename'], lat1, lon1, lat2, lon2))
-                else:
-                    routes.append(None)
+    routes, missing_pairs = _build_routes_for_photos(photos, route_cache)
 
     if missing_pairs:
         threading.Thread(target=fetch_missing_routes, args=(missing_pairs,), daemon=True).start()
@@ -915,6 +962,41 @@ def api_thumb(filename):
     abort(404)
 
 
+def _resolve_form_coords():
+    """Vom Client mitgesendete Koordinaten (Fallback, wenn das Foto kein EXIF-GPS hat -
+    z.B. Screenshot oder Kamera ohne Standortfreigabe)."""
+    try:
+        form_lat = request.form.get('lat')
+        form_lon = request.form.get('lon')
+        if form_lat and form_lon:
+            flat, flon = float(form_lat), float(form_lon)
+            if math.isfinite(flat) and math.isfinite(flon):
+                return (flat, flon)
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+def _write_coords_to_exif(save_path, lat, lon):
+    """Schreibt die Formular-Koordinaten ins Bild, damit spaetere EXIF-Reads (z.B. eine
+    Re-Indexierung) dieselben Koordinaten sehen wie die gerade gespeicherte DB-Zeile."""
+    try:
+        try:
+            exif_dict = piexif.load(save_path)
+        except Exception:
+            exif_dict = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
+        exif_dict['GPS'] = {
+            piexif.GPSIFD.GPSLatitudeRef: b'N' if lat >= 0 else b'S',
+            piexif.GPSIFD.GPSLatitude: decimal_to_dms_rational(abs(lat)),
+            piexif.GPSIFD.GPSLongitudeRef: b'E' if lon >= 0 else b'W',
+            piexif.GPSIFD.GPSLongitude: decimal_to_dms_rational(abs(lon)),
+        }
+        exif_bytes = piexif.dump(exif_dict)
+        piexif.insert(exif_bytes, save_path)
+    except Exception as e:
+        logger.warning(f"Failed to write form coords to EXIF: {e}")
+
+
 @app.route('/api/upload', methods=['POST'])
 @admin_required
 def upload_photo():
@@ -924,17 +1006,7 @@ def upload_photo():
     if not file.filename.lower().endswith(SUPPORTED_EXTENSIONS):
         return jsonify({'error': 'Nicht unterstuetztes Dateiformat.'}), 400
 
-    # Parse form-supplied coordinates (sent by client when EXIF GPS is missing)
-    form_coords = None
-    try:
-        form_lat = request.form.get('lat')
-        form_lon = request.form.get('lon')
-        if form_lat and form_lon:
-            flat, flon = float(form_lat), float(form_lon)
-            if math.isfinite(flat) and math.isfinite(flon):
-                form_coords = (flat, flon)
-    except (ValueError, TypeError):
-        pass
+    form_coords = _resolve_form_coords()
 
     try:
         filename = secure_filename(file.filename)
@@ -953,22 +1025,7 @@ def upload_photo():
         blur_thumb_path = _thumb_path(unique_name, '_blur')
 
         if not coords and form_coords:
-            flat, flon = form_coords
-            try:
-                try:
-                    exif_dict = piexif.load(save_path)
-                except Exception:
-                    exif_dict = {'0th': {}, 'Exif': {}, 'GPS': {}, '1st': {}}
-                exif_dict['GPS'] = {
-                    piexif.GPSIFD.GPSLatitudeRef: b'N' if flat >= 0 else b'S',
-                    piexif.GPSIFD.GPSLatitude: decimal_to_dms_rational(abs(flat)),
-                    piexif.GPSIFD.GPSLongitudeRef: b'E' if flon >= 0 else b'W',
-                    piexif.GPSIFD.GPSLongitude: decimal_to_dms_rational(abs(flon)),
-                }
-                exif_bytes = piexif.dump(exif_dict)
-                piexif.insert(exif_bytes, save_path)
-            except Exception as e:
-                logger.warning(f"Failed to write form coords to EXIF: {e}")
+            _write_coords_to_exif(save_path, *form_coords)
             coords = form_coords
 
         if not coords or math.isnan(coords[0]) or math.isnan(coords[1]):
