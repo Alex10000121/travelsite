@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_macros.html" as macros %}
 
 {% block title %}Admin{% endblock %}
 
@@ -33,130 +34,30 @@
         </nav>
 
         <div class="admin-grid admin-tab-panel" data-tab-panel="photos">
-
-            <section class="admin-card" id="card-upload">
-                <h2>Fotos hochladen</h2>
-
-                <div class="admin-upload-drop" id="admin-dropzone">
-                    <input type="file" id="admin-file-input" multiple accept="image/*" style="display:none;" aria-hidden="true">
-                    <button type="button" id="admin-choose-files" class="action-btn">Dateien auswählen</button>
-                </div>
-
-                <div id="admin-gps-picker" class="admin-gps-picker" style="display:none;">
-                    <p class="admin-gps-warning">📍 Kein GPS im Foto gefunden. Ort auf der Karte wählen:</p>
-                    <div id="admin-map"></div>
-                    <button type="button" id="admin-gps-confirm" class="action-btn">Position bestätigen</button>
-                </div>
-
-                <div id="admin-upload-progress" class="admin-progress" style="display:none;">
-                    <div class="progress-container">
-                        <div id="admin-progress-fill" class="progress-bar-fill"></div>
-                    </div>
-                    <p id="admin-progress-text" class="admin-hint"></p>
-                </div>
-
-                <ul id="admin-upload-log" class="admin-upload-log" aria-label="Upload-Verlauf"></ul>
-            </section>
-
-            <section class="admin-card" id="card-manage">
-                <h2>Fotos verwalten</h2>
-
-                <input type="search" id="admin-photo-search" class="admin-search-input"
-                       placeholder="Ort oder Dateiname suchen…" aria-label="Fotos durchsuchen">
-
-                <ul id="admin-photo-list" class="admin-photo-list" aria-label="Vorhandene Fotos"></ul>
-
-                <button type="button" id="admin-photo-load-more" class="admin-load-more-btn" style="display:none;">
-                    Weitere laden
-                </button>
-            </section>
-
+            {% include "_admin_tab_photos.html" %}
         </div>
 
         <div class="admin-grid admin-tab-panel" data-tab-panel="routes" style="display:none;">
-
-            <section class="admin-card" id="card-routes">
-                <h2>Routen</h2>
-                <p class="admin-hint">Automatisch erkannte Fahrt-/Flugstrecken zwischen aufeinanderfolgenden Fotos. Falsch erkannte Strecken hier korrigieren.</p>
-
-                <ul id="admin-route-list" class="admin-route-list" aria-label="Streckenabschnitte"></ul>
-
-                <button type="button" id="admin-route-load-more" class="admin-load-more-btn" style="display:none;">
-                    Weitere laden
-                </button>
-            </section>
-
+            {% include "_admin_tab_routes.html" %}
         </div>
 
         <div class="admin-grid admin-tab-panel" data-tab-panel="stats" style="display:none;">
-
-            <section class="admin-card" id="card-visitors">
-                <h2>Besucher</h2>
-
-                <div class="stats-grid admin-visitor-stats">
-                    <div class="stat-box">
-                        <span class="stat-value" id="admin-visitor-total">0</span>
-                        <span class="stat-label">Gesamt</span>
-                    </div>
-                    <div class="stat-box">
-                        <span class="stat-value" id="admin-visitor-active">0</span>
-                        <span class="stat-label">Aktuell online</span>
-                    </div>
-                </div>
-
-                <p class="admin-hint">Besuche der letzten 30 Tage</p>
-                <div class="visitor-chart-wrap">
-                    <div id="admin-visitor-chart" class="visitor-chart"></div>
-                    <div id="admin-visitor-tooltip" class="visitor-tooltip" style="display:none;">
-                        <span class="visitor-tooltip-date"></span>
-                        <strong class="visitor-tooltip-count"></strong>
-                    </div>
-                </div>
-            </section>
-
+            {% include "_admin_tab_stats.html" %}
         </div>
 
         <div class="admin-grid admin-tab-panel" data-tab-panel="log" style="display:none;">
-
-            <section class="admin-card" id="card-log">
-                <h2>Verlauf</h2>
-                <p class="admin-hint">Protokoll der Admin-Aktionen: Login/Logout, Uploads, Löschungen, GPS-/Notiz-/Favoriten-Änderungen, Routen-Korrekturen.</p>
-
-                <input type="search" id="admin-log-search" class="admin-search-input"
-                       placeholder="Aktion oder Detail suchen…" aria-label="Verlauf durchsuchen">
-
-                <ul id="admin-log-list" class="admin-log-list" aria-label="Aktionsprotokoll"></ul>
-
-                <p id="admin-log-count" class="admin-hint"></p>
-
-                <button type="button" id="admin-log-load-more" class="admin-load-more-btn" style="display:none;">
-                    Weitere laden
-                </button>
-            </section>
-
+            {% include "_admin_tab_log.html" %}
         </div>
     </div>
 
-    <div id="admin-fix-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="admin-fix-title">
-        <div class="modal-content">
-            <button class="close-modal" id="admin-fix-close" aria-label="Schließen">&times;</button>
-            <h3 id="admin-fix-title">Ort korrigieren</h3>
-            <div id="admin-fix-map"></div>
-            <button type="button" id="admin-fix-confirm" class="action-btn">Position speichern</button>
-        </div>
-    </div>
+    {% include "_admin_fix_modal.html" %}
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin="" defer></script>
     <script type="module" src="{{ url_for('static', filename='admin-main.js') }}"></script>
 {% else %}
     <div class="login-container">
         <div class="login-box">
-            <div class="icon-circle">
-                <svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                </svg>
-            </div>
+            {% include "_lock_icon.html" %}
 
             <h1>Admin-Bereich</h1>
 

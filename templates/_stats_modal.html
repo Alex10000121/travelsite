@@ -1,0 +1,22 @@
+<div id="stats-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="stats-title">
+    <div class="modal-content">
+        <button class="close-modal" id="close-stats" aria-label="Schließen">&times;</button>
+
+        <h3 id="stats-title">Reise Zusammenfassung</h3>
+
+        <div class="stats-grid">
+            {{ macros.stat_boxes([
+                ('stat-km', 'Kilometer'),
+                ('stat-countries', 'Länder'),
+                ('stat-days', 'Tage unterwegs'),
+                ('stat-photos', 'Fotos'),
+            ]) }}
+        </div>
+
+        <ul id="country-list" class="country-list" aria-label="Liste der besuchten Länder"></ul>
+
+        <div class="modal-footer">
+            <p>Bereits {{ visitor_count|default('0') }} Reisebegleiter waren hier.</p>
+        </div>
+    </div>
+</div>

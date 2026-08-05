@@ -1,0 +1,19 @@
+<section class="admin-card" id="card-visitors">
+    <h2>Besucher</h2>
+
+    <div class="stats-grid admin-visitor-stats">
+        {{ macros.stat_boxes([
+            ('admin-visitor-total', 'Gesamt'),
+            ('admin-visitor-active', 'Aktuell online'),
+        ]) }}
+    </div>
+
+    <p class="admin-hint">Besuche der letzten 30 Tage</p>
+    <div class="visitor-chart-wrap">
+        <div id="admin-visitor-chart" class="visitor-chart"></div>
+        <div id="admin-visitor-tooltip" class="visitor-tooltip" style="display:none;">
+            <span class="visitor-tooltip-date"></span>
+            <strong class="visitor-tooltip-count"></strong>
+        </div>
+    </div>
+</section>

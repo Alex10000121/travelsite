@@ -1,0 +1,36 @@
+<section class="admin-card" id="card-upload">
+    <h2>Fotos hochladen</h2>
+
+    <div class="admin-upload-drop" id="admin-dropzone">
+        <input type="file" id="admin-file-input" multiple accept="image/*" style="display:none;" aria-hidden="true">
+        <button type="button" id="admin-choose-files" class="action-btn">Dateien auswählen</button>
+    </div>
+
+    <div id="admin-gps-picker" class="admin-gps-picker" style="display:none;">
+        <p class="admin-gps-warning">📍 Kein GPS im Foto gefunden. Ort auf der Karte wählen:</p>
+        <div id="admin-map"></div>
+        <button type="button" id="admin-gps-confirm" class="action-btn">Position bestätigen</button>
+    </div>
+
+    <div id="admin-upload-progress" class="admin-progress" style="display:none;">
+        <div class="progress-container">
+            <div id="admin-progress-fill" class="progress-bar-fill"></div>
+        </div>
+        <p id="admin-progress-text" class="admin-hint"></p>
+    </div>
+
+    <ul id="admin-upload-log" class="admin-upload-log" aria-label="Upload-Verlauf"></ul>
+</section>
+
+<section class="admin-card" id="card-manage">
+    <h2>Fotos verwalten</h2>
+
+    <input type="search" id="admin-photo-search" class="admin-search-input"
+           placeholder="Ort oder Dateiname suchen…" aria-label="Fotos durchsuchen">
+
+    <ul id="admin-photo-list" class="admin-photo-list" aria-label="Vorhandene Fotos"></ul>
+
+    <button type="button" id="admin-photo-load-more" class="admin-load-more-btn" style="display:none;">
+        Weitere laden
+    </button>
+</section>

@@ -1,0 +1,8 @@
+{% macro stat_boxes(items) %}
+{%- for stat_id, stat_label in items %}
+    <div class="stat-box">
+        <span class="stat-value" id="{{ stat_id }}">0</span>
+        <span class="stat-label">{{ stat_label }}</span>
+    </div>
+{%- endfor %}
+{% endmacro %}
