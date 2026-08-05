@@ -81,15 +81,24 @@ def _require_env(name):
     return value
 
 
+_PUBLIC_MODE = os.environ.get('PUBLIC_MODE', '0') == '1'
+
 CONFIG = {
     'PHOTO_DIR': os.environ.get('PHOTO_DIR', './photos'),
     'THUMB_DIR': os.environ.get('THUMB_DIR', './data/thumbs'),
     'DB_PATH': os.environ.get('DB_PATH', './data/trips.db'),
-    'ACCESS_TOKEN': _require_env('ACCESS_TOKEN'),
+    'PUBLIC_MODE': _PUBLIC_MODE,
+    'ACCESS_TOKEN': os.environ.get('ACCESS_TOKEN', '') if _PUBLIC_MODE else _require_env('ACCESS_TOKEN'),
     'ADMIN_TOKEN': _require_env('ADMIN_TOKEN'),
     'CONTACT_EMAIL': os.environ.get('CONTACT_EMAIL', 'deine.email@beispiel.de'),
     'MAPTILER_API_KEY': os.environ.get('MAPTILER_API_KEY', '')
 }
+
+
+def _access_granted(token):
+    if CONFIG['PUBLIC_MODE']:
+        return True
+    return secrets.compare_digest(token, CONFIG['ACCESS_TOKEN'])
 
 # Muss ein eigenstaendiges, zufaelliges Secret sein - ein von ADMIN_TOKEN abgeleiteter
 # Schluessel waere ein Offline-Orakel, mit dem sich das Admin-Passwort aus einem
@@ -605,9 +614,9 @@ def admin_required(f):
 @app.route('/')
 @limiter.limit("20 per minute")
 def index():
-    token = request.args.get('token')
-    if token and secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']):
-        return render_template('index.html', token=token, visitor_count=track_visitor_count(),
+    token = request.args.get('token', '')
+    if _access_granted(token):
+        return render_template('index.html', token=token or 'public', visitor_count=track_visitor_count(),
                                maptiler_key=CONFIG['MAPTILER_API_KEY'])
     return render_template('login.html', contact_email=CONFIG['CONTACT_EMAIL'])
 
@@ -641,7 +650,7 @@ def admin_logout():
 @limiter.limit("30 per minute")
 def api_stats():
     token = request.args.get('token', '')
-    if not secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']): abort(403)
+    if not _access_granted(token): abort(403)
 
     try:
         with get_db() as conn:
@@ -690,7 +699,7 @@ def api_stats():
 @limiter.limit("30 per minute")
 def api_route():
     token = request.args.get('token', '')
-    if not secrets.compare_digest(token, CONFIG['ACCESS_TOKEN']): abort(403)
+    if not _access_granted(token): abort(403)
 
     photos = []
     try:
@@ -804,7 +813,7 @@ def _is_within_dir(base_dir, target_path):
 @app.route('/api/thumb/<path:filename>')
 def api_thumb(filename):
     token = request.args.get('token', '')
-    if not (session.get('is_admin') or secrets.compare_digest(token, CONFIG['ACCESS_TOKEN'])): abort(403)
+    if not (session.get('is_admin') or _access_granted(token)): abort(403)
 
     base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
     requested_path = os.path.abspath(os.path.join(base_dir, filename))

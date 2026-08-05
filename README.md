@@ -50,9 +50,9 @@ Konzipiert für den Betrieb auf einem NAS (z. B. Synology) oder einem kleinen VP
 - Besucherzähler (sessionbasiert, 1-Stunden-Fenster)
 
 ### Sicherheit & Datenschutz
-- Lesezugriff nur über einen geheimen Token-Link
+- Lesezugriff nur über einen geheimen Token-Link (optional abschaltbar via `PUBLIC_MODE`, siehe [Konfiguration](#konfiguration))
 - Upload und Verwaltung über eine separate Admin-Anmeldung geschützt (serverseitige Session statt Query-Token)
-- `ACCESS_TOKEN`, `ADMIN_TOKEN` und `SECRET_KEY` sind Pflicht-Umgebungsvariablen ohne unsicheren Standardwert – die App startet ohne sie bewusst nicht
+- `ADMIN_TOKEN` und `SECRET_KEY` sind immer Pflicht-Umgebungsvariablen ohne unsicheren Standardwert – die App startet ohne sie bewusst nicht. `ACCESS_TOKEN` ebenso, außer `PUBLIC_MODE=1` ist gesetzt
 - Datei-Endungs-Whitelist und Größenlimit beim Upload
 - Rate-Limiting gegen Brute-Force auf Login- und Token-geschützten Endpunkten
 - Keine Nutzerkonten, keine Datenbank außer SQLite
@@ -83,13 +83,15 @@ docker run -d \
   ghcr.io/alex10000121/travelsite:latest
 ```
 
-`ACCESS_TOKEN`, `ADMIN_TOKEN` und `SECRET_KEY` sind Pflicht — ohne sie startet der Container nicht (bewusst kein unsicherer Standardwert).
+`ACCESS_TOKEN`, `ADMIN_TOKEN` und `SECRET_KEY` sind Pflicht — ohne sie startet der Container nicht (bewusst kein unsicherer Standardwert). Läuft die App nur im eigenen LAN/VPN, kann `ACCESS_TOKEN` mit `-e PUBLIC_MODE=1` entfallen (siehe [Konfiguration](#konfiguration)).
 
 Anschließend die Seite im Browser öffnen:
 
 ```
 http://DEINE-IP:5050/?token=dein-geheimes-passwort
 ```
+
+Mit `PUBLIC_MODE=1` reicht `http://DEINE-IP:5050/` ohne Token.
 
 ### Lokal ohne Docker
 
@@ -114,6 +116,7 @@ http://127.0.0.1:5000/?token=<dein ACCESS_TOKEN>
 Alle Einstellungen werden über Umgebungsvariablen gesetzt. Für den lokalen Betrieb kann eine `.env`-Datei verwendet werden, siehe [`.env.example`](.env.example) als Vorlage:
 
 ```env
+PUBLIC_MODE=0
 ACCESS_TOKEN=dein-geheimes-passwort
 ADMIN_TOKEN=admin-upload-passwort
 SECRET_KEY=
@@ -127,7 +130,8 @@ FLASK_DEBUG=0
 
 | Variable         | Standardwert            | Beschreibung                                                          |
 |------------------|-------------------------|-----------------------------------------------------------------------|
-| `ACCESS_TOKEN`   | **Pflicht, kein Standard** | Token für den Lesezugriff – wird an die URL angehängt              |
+| `PUBLIC_MODE`    | `0`                      | `1` macht die Galerie/Karte ohne `ACCESS_TOKEN` öffentlich erreichbar – nur für vertrauenswürdige Netze (LAN/VPN) gedacht |
+| `ACCESS_TOKEN`   | **Pflicht, außer `PUBLIC_MODE=1`** | Token für den Lesezugriff – wird an die URL angehängt      |
 | `ADMIN_TOKEN`    | **Pflicht, kein Standard** | Passwort für Upload, Verwaltung und GPS-Korrekturen                |
 | `SECRET_KEY`     | **Pflicht, kein Standard** | Signiert die Admin-Session. Zufällig generieren, z.B. `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `MAPTILER_API_KEY` | *(leer)*              | API-Key für MapTiler (3D-Terrain, Gebäude). Ohne Key: OSM-Fallback    |

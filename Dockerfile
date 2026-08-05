@@ -14,8 +14,9 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt && pip install gunicorn
 
-# ACCESS_TOKEN, ADMIN_TOKEN und SECRET_KEY sind bewusst NICHT vorbelegt - app.py
-# bricht ohne sie ab. Muessen beim "docker run" per -e gesetzt werden, siehe README.
+# ADMIN_TOKEN und SECRET_KEY sind bewusst NICHT vorbelegt - app.py bricht ohne sie
+# ab. Muessen beim "docker run" per -e gesetzt werden, siehe README. ACCESS_TOKEN
+# ebenso, ausser PUBLIC_MODE=1 wird gesetzt (dann entfaellt es).
 ENV PHOTO_DIR=/photos \
     THUMB_DIR=/data/thumbs \
     DB_PATH=/data/trips.db \
