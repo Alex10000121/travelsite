@@ -85,12 +85,25 @@ async function init() {
         }));
 
         map.renderPhotos(allPhotos, routes || []);
-        gallery.loadPhotos(allPhotos, 0);
         renderCountryList(summarizeCountries(allPhotos));
+        gallery.loadPhotos(allPhotos, findStartIndexForLastCountry(allPhotos));
 
     } catch (err) {
         console.error('Fehler beim Laden der Reisedaten:', err);
     }
+}
+
+/**
+ * Index des ersten Fotos des zuletzt besuchten Landes (photos ist zeitlich sortiert,
+ * "zuletzt besucht" = Land des letzten Fotos).
+ * @param {Array<object>} photos - muessen countryCode enthalten
+ * @returns {number}
+ */
+function findStartIndexForLastCountry(photos) {
+    if (!photos.length) return 0;
+    const lastCountry = photos[photos.length - 1].countryCode;
+    const index = photos.findIndex(p => p.countryCode === lastCountry);
+    return index === -1 ? 0 : index;
 }
 
 async function loadStats() {
