@@ -12,7 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt && pip install gunicorn
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir gunicorn && \
+    pip uninstall -y pip setuptools wheel
 
 # ADMIN_TOKEN und SECRET_KEY sind bewusst NICHT vorbelegt - app.py bricht ohne sie
 # ab. Muessen beim "docker run" per -e gesetzt werden, siehe README. ACCESS_TOKEN
