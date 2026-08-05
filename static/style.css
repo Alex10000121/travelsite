@@ -12,6 +12,13 @@
     --radius: 20px;
     --shadow: 0 10px 30px rgba(0,0,0,0.5);
     --transition-speed: 0.3s;
+    --color-danger: #f87171;
+
+    /* Weiß-Overlay-Stufen (Borders/Hintergründe auf dunklem Grund) */
+    --overlay-faint: rgba(255,255,255,0.05);
+    --overlay-soft: rgba(255,255,255,0.1);
+    --overlay-medium: rgba(255,255,255,0.15);
+    --overlay-strong: rgba(255,255,255,0.18);
 
     /* Z-Index Layer Management (WICHTIG für Übersicht) */
     --z-background: 1;
@@ -134,7 +141,7 @@ body, html {
     backdrop-filter: blur(12px);
     padding: 10px 20px; border-radius: 30px;
     text-align: center; min-width: 200px;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid var(--overlay-soft);
     z-index: var(--z-ui-overlay);
     pointer-events: none;
 }
@@ -162,8 +169,8 @@ body, html {
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
     scrollbar-width: none;
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
+    background: var(--overlay-faint);
+    border: 1px solid var(--overlay-soft);
     border-radius: 16px;
 }
 .filmstrip::-webkit-scrollbar { display: none; }
@@ -255,7 +262,7 @@ body, html {
 .info-btn {
     position: absolute; top: 30px;
     width: 45px; height: 45px;
-    background: rgba(255,255,255,0.1);
+    background: var(--overlay-soft);
     border: 1px solid rgba(255,255,255,0.2);
     border-radius: 50%; color: var(--text-main);
     cursor: pointer; display: flex; justify-content: center; align-items: center;
@@ -266,8 +273,7 @@ body, html {
 .info-btn:hover { background: var(--accent-color); border-color: var(--accent-color); transform: scale(1.1); }
 .info-btn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 
-.help-pos  { left: 30px; }
-.upload-pos { left: 85px; }
+.help-pos { left: 30px; }
 .stats-pos { right: 30px; }
 
 .nav-btn {
@@ -304,7 +310,7 @@ body, html {
 .modal-content {
     background: #1e1e1e; padding: 30px; border-radius: var(--radius);
     width: 85%; max-width: 450px; text-align: center;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid var(--overlay-soft);
     box-shadow: 0 20px 50px rgba(0,0,0,0.8);
     position: relative; transform: translateY(20px); transition: transform 0.3s ease;
 }
@@ -317,13 +323,13 @@ body, html {
 .close-modal:hover { color: #fff; }
 
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
-.stat-box { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 15px; }
+.stat-box { background: var(--overlay-faint); padding: 15px; border-radius: 15px; }
 .stat-value { display: block; font-size: 1.6rem; font-weight: 800; color: var(--accent-color); }
 .stat-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
 
 .modal-footer {
     margin-top: 30px; padding-top: 15px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--overlay-soft);
     color: var(--text-muted); font-size: 0.85rem; text-align: center;
 }
 .modal-footer p { margin: 0; opacity: 0.6; }
@@ -342,7 +348,7 @@ body, html {
     display: flex;
     align-items: center;
     gap: 10px;
-    background: rgba(255,255,255,0.05);
+    background: var(--overlay-faint);
     border-radius: 12px;
     padding: 8px 14px;
     text-align: left;
@@ -351,7 +357,7 @@ body, html {
     width: 24px; height: 18px;
     object-fit: cover;
     border-radius: 3px;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.15);
+    box-shadow: 0 0 0 1px var(--overlay-medium);
     flex: 0 0 auto;
 }
 .country-list .country-name { flex: 1; font-size: 0.95rem; }
@@ -366,12 +372,12 @@ body, html {
    7. LOGIN PAGE (Standalone)
    ========================================= */
 .login-container { display: flex; justify-content: center; align-items: center; height: 100vh; width: 100vw; background-color: var(--bg-color); }
-.login-box { background: var(--panel-color); padding: 40px; border-radius: var(--radius); text-align: center; width: 90%; max-width: 400px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.05); }
-.icon-circle { width: 60px; height: 60px; margin: 0 auto 20px; background: rgba(255,255,255,0.05); border-radius: 50%; display: flex; justify-content: center; align-items: center; color: var(--accent-color); }
+.login-box { background: var(--panel-color); padding: 40px; border-radius: var(--radius); text-align: center; width: 90%; max-width: 400px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); border: 1px solid var(--overlay-faint); }
+.icon-circle { width: 60px; height: 60px; margin: 0 auto 20px; background: var(--overlay-faint); border-radius: 50%; display: flex; justify-content: center; align-items: center; color: var(--accent-color); }
 .contact-btn { display: inline-block; text-decoration: none; width: 100%; padding: 15px; border-radius: 8px; background: var(--accent-color); color: white; font-weight: 600; box-sizing: border-box; }
 
 .admin-password-input { width: 100%; padding: 12px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #444; background: #222; color: white; font-size: 1rem; }
-.admin-login-error { color: #f87171; font-size: 0.85rem; margin: -10px 0 15px; }
+.admin-login-error { color: var(--color-danger); font-size: 0.85rem; margin: -10px 0 15px; }
 
 /* =========================================
    8. ADMIN DASHBOARD (/admin)
@@ -383,39 +389,41 @@ body.admin-page { overflow-y: auto; }
 .admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
 .admin-header h1 { margin: 0; font-size: 1.6rem; }
 .admin-header-actions { display: flex; align-items: center; gap: 10px; }
-.admin-back-btn, .admin-logout-btn { background: rgba(255,255,255,0.08); color: var(--text-main); border: 1px solid rgba(255,255,255,0.15); padding: 10px 20px; border-radius: 30px; cursor: pointer; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; }
-.admin-back-btn:hover, .admin-logout-btn:hover { background: rgba(255,255,255,0.15); }
+.admin-back-btn, .admin-logout-btn { background: rgba(255,255,255,0.08); color: var(--text-main); border: 1px solid var(--overlay-medium); padding: 10px 20px; border-radius: 30px; cursor: pointer; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; }
+.admin-back-btn:hover, .admin-logout-btn:hover { background: var(--overlay-medium); }
 
-.admin-tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.admin-tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--overlay-soft); }
 .admin-tab { background: none; border: none; color: var(--text-muted); padding: 10px 18px; font-size: 0.95rem; cursor: pointer; border-bottom: 2px solid transparent; }
 .admin-tab:hover { color: var(--text-main); }
 .admin-tab.active { color: var(--text-main); border-bottom-color: var(--accent-color); font-weight: 600; }
 
 .admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
 
-.admin-card { background: var(--panel-color); border-radius: var(--radius); padding: 25px; border: 1px solid rgba(255,255,255,0.05); }
+.admin-card { background: var(--panel-color); border-radius: var(--radius); padding: 25px; border: 1px solid var(--overlay-faint); }
 .admin-card h2 { margin: 0 0 18px; font-size: 1.1rem; }
 
-.admin-upload-drop { text-align: center; padding: 20px; border: 2px dashed rgba(255,255,255,0.15); border-radius: 14px; }
+.admin-upload-drop { text-align: center; padding: 20px; border: 2px dashed var(--overlay-medium); border-radius: 14px; }
 .admin-hint { color: var(--text-muted); font-size: 0.85rem; margin-top: 10px; text-align: center; }
 
 .admin-gps-picker { margin-top: 18px; }
-.admin-gps-warning { color: #f87171; font-weight: 600; font-size: 0.9rem; margin-bottom: 10px; }
+.admin-gps-warning { color: var(--color-danger); font-weight: 600; font-size: 0.9rem; margin-bottom: 10px; }
 #admin-map { width: 100%; height: 280px; border-radius: 14px; overflow: hidden; }
 
 .admin-progress { margin-top: 18px; }
+.progress-container { width: 100%; height: 10px; background-color: var(--overlay-soft); border-radius: 10px; margin-top: 20px; overflow: hidden; position: relative; }
+.progress-bar-fill { height: 100%; width: 0%; background-color: var(--accent-color); border-radius: 10px; transition: width 0.3s ease-out; box-shadow: 0 0 10px var(--accent-color); }
 
 .admin-upload-log { list-style: none; margin: 18px 0 0; padding: 0; max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
-.admin-upload-log li { padding: 8px 12px; border-radius: 10px; background: rgba(255,255,255,0.05); font-size: 0.85rem; }
+.admin-upload-log li { padding: 8px 12px; border-radius: 10px; background: var(--overlay-faint); font-size: 0.85rem; }
 .admin-log-ok { color: #86efac; }
-.admin-log-error { color: #f87171; }
+.admin-log-error { color: var(--color-danger); }
 
-.admin-search-input { width: 100%; padding: 10px 14px; margin-bottom: 14px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: var(--text-main); font-size: 0.9rem; }
+.admin-search-input { width: 100%; padding: 10px 14px; margin-bottom: 14px; border-radius: 30px; border: 1px solid var(--overlay-medium); background: var(--overlay-faint); color: var(--text-main); font-size: 0.9rem; }
 .admin-search-input::placeholder { color: var(--text-muted); }
 .admin-search-input:focus { outline: none; border-color: var(--accent-color); }
 
-.admin-photo-list { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-.admin-photo-item { padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.05); }
+.admin-photo-list, .admin-route-list { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.admin-photo-item, .admin-route-item { padding: 10px; border-radius: 12px; background: var(--overlay-faint); }
 .admin-photo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .admin-photo-item img { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; }
 .admin-photo-info { flex: 1 1 120px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -431,8 +439,8 @@ body.admin-page { overflow-y: auto; }
 }
 .admin-fix-btn { background: var(--accent-color); }
 .admin-fix-btn:hover { background: var(--accent-hover); }
-.admin-note-btn, .admin-fav-btn { background: rgba(255,255,255,0.1); }
-.admin-note-btn:hover, .admin-fav-btn:hover { background: rgba(255,255,255,0.18); }
+.admin-note-btn, .admin-fav-btn { background: var(--overlay-soft); }
+.admin-note-btn:hover, .admin-fav-btn:hover { background: var(--overlay-strong); }
 .admin-fav-btn.active { background: #ca8a04; }
 .admin-delete-btn { background: #7f1d1d; }
 .admin-delete-btn:hover { background: #991b1b; }
@@ -444,8 +452,8 @@ body.admin-page { overflow-y: auto; }
     resize: vertical;
     padding: 8px 10px;
     border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.15);
-    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--overlay-medium);
+    background: var(--overlay-faint);
     color: var(--text-main);
     font-family: inherit;
     font-size: 0.85rem;
@@ -458,23 +466,21 @@ body.admin-page { overflow-y: auto; }
 }
 .admin-note-save-btn:hover { background: var(--accent-hover); }
 
-.admin-load-more-btn { width: 100%; margin-top: 12px; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: var(--text-main); font-size: 0.85rem; cursor: pointer; }
-.admin-load-more-btn:hover { background: rgba(255,255,255,0.1); }
+.admin-load-more-btn { width: 100%; margin-top: 12px; padding: 10px; border-radius: 10px; border: 1px solid var(--overlay-medium); background: var(--overlay-faint); color: var(--text-main); font-size: 0.85rem; cursor: pointer; }
+.admin-load-more-btn:hover { background: var(--overlay-soft); }
 
-.admin-route-list { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-.admin-route-item { padding: 10px; border-radius: 12px; background: rgba(255,255,255,0.05); }
 .admin-route-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .admin-route-row img { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; }
 .admin-route-info { flex: 1 1 140px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .admin-route-label { font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .admin-route-distance { font-size: 0.75rem; color: var(--text-muted); }
 .admin-mode-toggle { display: flex; gap: 6px; flex: 0 0 auto; margin-left: auto; }
-.admin-mode-btn { border: none; border-radius: 8px; padding: 8px 12px; font-size: 0.8rem; cursor: pointer; color: var(--text-main); background: rgba(255,255,255,0.1); white-space: nowrap; }
-.admin-mode-btn:hover { background: rgba(255,255,255,0.18); }
+.admin-mode-btn { border: none; border-radius: 8px; padding: 8px 12px; font-size: 0.8rem; cursor: pointer; color: var(--text-main); background: var(--overlay-soft); white-space: nowrap; }
+.admin-mode-btn:hover { background: var(--overlay-strong); }
 .admin-mode-btn.active { background: var(--accent-color); color: white; }
 
 .admin-log-list { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-.admin-log-item { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.05); font-size: 0.85rem; }
+.admin-log-item { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border-radius: 10px; background: var(--overlay-faint); font-size: 0.85rem; }
 .admin-log-action { font-weight: 600; flex: 0 0 auto; }
 .admin-log-detail { flex: 1 1 160px; min-width: 0; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .admin-log-time { flex: 0 0 auto; margin-left: auto; color: var(--text-muted); font-size: 0.75rem; white-space: nowrap; }
@@ -495,7 +501,7 @@ body.admin-page { overflow-y: auto; }
 .visitor-chart-enddot, .visitor-chart-hoverdot { fill: var(--accent-color); stroke: var(--panel-color); stroke-width: 2; }
 .visitor-chart-hitarea { fill: transparent; cursor: crosshair; }
 
-.visitor-tooltip { position: absolute; top: -6px; transform: translate(-50%, -100%); background: #1e1e1e; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 6px 10px; font-size: 0.75rem; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 16px rgba(0,0,0,0.4); }
+.visitor-tooltip { position: absolute; top: -6px; transform: translate(-50%, -100%); background: #1e1e1e; border: 1px solid var(--overlay-soft); border-radius: 8px; padding: 6px 10px; font-size: 0.75rem; white-space: nowrap; pointer-events: none; box-shadow: 0 6px 16px rgba(0,0,0,0.4); }
 .visitor-tooltip-date { color: var(--text-muted); margin-right: 6px; }
 .visitor-tooltip-count { color: var(--text-main); }
 
@@ -510,7 +516,6 @@ body.admin-page { overflow-y: auto; }
 
     .info-btn { top: 4%; width: 40px; height: 40px; background: rgba(0,0,0,0.5); }
     .help-pos { left: 5%; }
-    .upload-pos { left: 18%; }
     .stats-pos { right: 5%; }
 
     .info-overlay { width: 80%; bottom: 5%; padding: 8px; }
@@ -523,26 +528,4 @@ body.admin-page { overflow-y: auto; }
 
     /* Navigation via Swipe statt Buttons auf Mobile */
     .nav-btn { display: none !important; }
-    /* =========================================
-   UPLOAD PROGRESS BAR
-   ========================================= */
-    .progress-container {
-        width: 100%;
-        height: 10px;
-        background-color: rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        margin-top: 20px;
-        overflow: hidden;
-        position: relative;
-    }
-
-    .progress-bar-fill {
-        height: 100%;
-        width: 0%;
-        background-color: var(--accent-color);
-        border-radius: 10px;
-        transition: width 0.3s ease-out;
-        box-shadow: 0 0 10px var(--accent-color);
-    }
-
 }
