@@ -130,7 +130,7 @@ FLASK_DEBUG=0
 
 | Variable         | Standardwert            | Beschreibung                                                          |
 |------------------|-------------------------|-----------------------------------------------------------------------|
-| `PUBLIC_MODE`    | `0`                      | `1` macht die Galerie/Karte ohne `ACCESS_TOKEN` öffentlich erreichbar – nur für vertrauenswürdige Netze (LAN/VPN) gedacht |
+| `PUBLIC_MODE`    | `0`                      | `1` macht die Galerie/Karte ohne `ACCESS_TOKEN` erreichbar und deaktiviert das Secure-Cookie-Flag der Admin-Session (nötig für Zugriff per HTTP) – nur für vertrauenswürdige Netze ohne TLS (LAN/VPN) gedacht |
 | `ACCESS_TOKEN`   | **Pflicht, außer `PUBLIC_MODE=1`** | Token für den Lesezugriff – wird an die URL angehängt      |
 | `ADMIN_TOKEN`    | **Pflicht, kein Standard** | Passwort für Upload, Verwaltung und GPS-Korrekturen                |
 | `SECRET_KEY`     | **Pflicht, kein Standard** | Signiert die Admin-Session. Zufällig generieren, z.B. `python -c "import secrets; print(secrets.token_hex(32))"` |

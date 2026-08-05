@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 Compress(app)
 
-# Nur ueber FLASK_DEBUG=1 aktivierbar (siehe .env) - steuert sowohl den
-# Werkzeug-Reloader/Debugger (app.run unten) als auch SESSION_COOKIE_SECURE,
-# da Cookies mit Secure-Flag beim lokalen Test ueber http sonst nicht ankommen.
+# Nur ueber FLASK_DEBUG=1 aktivierbar (siehe .env) - steuert den
+# Werkzeug-Reloader/Debugger (app.run unten). SESSION_COOKIE_SECURE haengt
+# zusaetzlich an PUBLIC_MODE, siehe app.config.update unten.
 app.debug = os.environ.get('FLASK_DEBUG', '0') == '1'
 
 
@@ -106,7 +106,7 @@ def _access_granted(token):
 app.secret_key = _require_env('SECRET_KEY')
 
 app.config.update(
-    SESSION_COOKIE_SECURE=not app.debug,
+    SESSION_COOKIE_SECURE=not (app.debug or CONFIG['PUBLIC_MODE']),
     SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
     MAX_CONTENT_LENGTH=32 * 1024 * 1024,  # 32 MB - reicht fuer Handy-/Kamerafotos, verhindert Speicher-DoS
