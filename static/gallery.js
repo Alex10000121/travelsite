@@ -80,10 +80,8 @@ export class GalleryController {
         this._update();
     }
 
-    /** Gibt den aktuellen Index zurück. */
     get currentIndex() { return this._currentIndex; }
 
-    /** Gibt das aktuell angezeigte Foto-Objekt zurück. */
     get currentPhoto() { return this._photos[this._currentIndex] ?? null; }
 
     /**
@@ -176,8 +174,8 @@ export class GalleryController {
      */
     _displayImage(filename) {
         const { currentPhoto: imgEl, bgPhoto: bgEl } = this._dom;
-        const url     = `/api/thumb/${encodeFilenamePath(filename)}?token=${this._token}`;
-        const blurUrl = `${url}&size=blur`;
+        const url     = this._thumbUrl(filename);
+        const blurUrl = this._thumbUrl(filename, 'blur');
 
         if (imgEl) {
             imgEl.classList.remove('is-fullscreen');
@@ -212,6 +210,11 @@ export class GalleryController {
 
     _setText(el, text) {
         if (el) el.innerText = text;
+    }
+
+    _thumbUrl(filename, size) {
+        const url = `/api/thumb/${encodeFilenamePath(filename)}?token=${this._token}`;
+        return size ? `${url}&size=${size}` : url;
     }
 
     /**
@@ -287,7 +290,7 @@ export class GalleryController {
             } else {
                 const photo = this.currentPhoto;
                 if (photo) {
-                    imgEl.src = `/api/thumb/${encodeFilenamePath(photo.filename)}?token=${this._token}&size=large`;
+                    imgEl.src = this._thumbUrl(photo.filename, 'large');
                 }
                 imgEl.classList.add('is-fullscreen');
             }
@@ -311,7 +314,7 @@ export class GalleryController {
             btn.setAttribute('aria-label', photo.location || `Foto ${i + 1}`);
 
             const img = document.createElement('img');
-            img.src = `/api/thumb/${encodeFilenamePath(photo.filename)}?token=${this._token}&size=blur`;
+            img.src = this._thumbUrl(photo.filename, 'blur');
             img.loading = 'lazy';
             img.alt = '';
 

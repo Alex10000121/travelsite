@@ -6,7 +6,6 @@ vi.mock('../../static/api.js', () => ({
 
 import { AdminUploadCard } from '../../static/admin-upload.js';
 
-// Minimale Map-Attrappe: alle Methoden, die AdminUploadCard aufruft.
 function makeMockMap() {
     return {
         getCenter:          vi.fn(() => ({ lat: 50, lon: 10 })),

@@ -2,7 +2,15 @@ import io
 import json
 import os
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+
+
+def _make_jpeg_bytes(color=0):
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new('RGB', (100, 100), color=color).save(buf, format='JPEG')
+    buf.seek(0)
+    return buf
 
 
 class TestIndexRoute:
@@ -20,6 +28,11 @@ class TestIndexRoute:
         assert response.status_code == 200
         assert b'login' in response.data.lower()
 
+    def test_admin_session_without_token_returns_gallery(self, admin_client):
+        response = admin_client.get('/')
+        assert response.status_code == 200
+        assert b'login' not in response.data.lower()
+
 
 class TestApiRoute:
     def test_valid_token_returns_json(self, client):
@@ -32,6 +45,10 @@ class TestApiRoute:
     def test_invalid_token_returns_403(self, client):
         response = client.get('/api/route?token=wrong')
         assert response.status_code == 403
+
+    def test_admin_session_without_token_returns_json(self, admin_client):
+        response = admin_client.get('/api/route')
+        assert response.status_code == 200
 
 
 class TestApiStats:
@@ -47,6 +64,10 @@ class TestApiStats:
     def test_invalid_token_returns_403(self, client):
         response = client.get('/api/stats?token=wrong')
         assert response.status_code == 403
+
+    def test_admin_session_without_token_returns_json(self, admin_client):
+        response = admin_client.get('/api/stats')
+        assert response.status_code == 200
 
     def test_empty_db_returns_zero_stats(self, client):
         response = client.get('/api/stats?token=test_token')
@@ -103,16 +124,9 @@ class TestAdminLogout:
 
 
 class TestUploadPhoto:
-    def _make_jpeg_bytes(self):
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new('RGB', (100, 100), color=(100, 149, 237)).save(buf, format='JPEG')
-        buf.seek(0)
-        return buf
-
     def test_without_admin_session_returns_403(self, client):
         response = client.post('/api/upload', data={
-            'photo': (self._make_jpeg_bytes(), 'test.jpg')
+            'photo': (_make_jpeg_bytes(color=(100, 149, 237)), 'test.jpg')
         }, content_type='multipart/form-data')
         assert response.status_code == 403
 
@@ -122,7 +136,7 @@ class TestUploadPhoto:
 
     def test_valid_upload_returns_success(self, admin_client):
         response = admin_client.post('/api/upload', data={
-            'photo': (self._make_jpeg_bytes(), 'test.jpg'),
+            'photo': (_make_jpeg_bytes(color=(100, 149, 237)), 'test.jpg'),
             'lat': '48.8566',
             'lon': '2.3522',
         }, content_type='multipart/form-data')
@@ -133,7 +147,7 @@ class TestUploadPhoto:
 
     def test_upload_response_contains_location_field(self, admin_client):
         response = admin_client.post('/api/upload', data={
-            'photo': (self._make_jpeg_bytes(), 'test.jpg'),
+            'photo': (_make_jpeg_bytes(color=(100, 149, 237)), 'test.jpg'),
             'lat': '48.8566',
             'lon': '2.3522',
         }, content_type='multipart/form-data')
@@ -142,7 +156,7 @@ class TestUploadPhoto:
 
     def test_upload_response_contains_missing_gps_field(self, admin_client):
         response = admin_client.post('/api/upload', data={
-            'photo': (self._make_jpeg_bytes(), 'test.jpg')
+            'photo': (_make_jpeg_bytes(color=(100, 149, 237)), 'test.jpg')
         }, content_type='multipart/form-data')
         data = response.get_json()
         assert 'missing_gps' in data
@@ -164,17 +178,10 @@ class TestUploadPhoto:
 
 
 class TestUploadWithFormCoords:
-    def _make_jpeg_bytes(self):
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
-        buf.seek(0)
-        return buf
-
     def test_piexif_insert_not_called_without_coords(self, admin_client):
         with patch('piexif.insert') as mock_insert:
             admin_client.post('/api/upload', data={
-                'photo': (self._make_jpeg_bytes(), 'no_coords.jpg'),
+                'photo': (_make_jpeg_bytes(), 'no_coords.jpg'),
             }, content_type='multipart/form-data')
 
             mock_insert.assert_not_called()
@@ -185,7 +192,7 @@ class TestUploadWithFormCoords:
              patch('piexif.insert'):
 
             response = admin_client.post('/api/upload', data={
-                'photo': (self._make_jpeg_bytes(), 'bad_exif.jpg'),
+                'photo': (_make_jpeg_bytes(), 'bad_exif.jpg'),
                 'lat': '48.8566',
                 'lon': '2.3522',
             }, content_type='multipart/form-data')
@@ -194,13 +201,6 @@ class TestUploadWithFormCoords:
 
 
 class TestUploadIdempotency:
-    def _make_jpeg_bytes(self):
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
-        buf.seek(0)
-        return buf
-
     def test_duplicate_filename_in_db_does_not_crash_upload(self, admin_client, app):
         import app as flask_module
         from app import get_db
@@ -212,7 +212,7 @@ class TestUploadIdempotency:
             conn.commit()
 
         response = admin_client.post('/api/upload', data={
-            'photo': (self._make_jpeg_bytes(), 'duplicate.jpg'),
+            'photo': (_make_jpeg_bytes(), 'duplicate.jpg'),
             'lat': '48.0',
             'lon': '11.0',
         }, content_type='multipart/form-data')
@@ -238,13 +238,6 @@ class TestApiRouteNullTimestamp:
 
 
 class TestUploadResponseFields:
-    def _make_jpeg_bytes(self):
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
-        buf.seek(0)
-        return buf
-
     def test_upload_response_contains_lat_lon(self, admin_client, tmp_path):
         import piexif
         from PIL import Image
@@ -282,7 +275,7 @@ class TestUploadResponseFields:
         import app as flask_module
         import os
         response = admin_client.post('/api/upload', data={
-            'photo': (self._make_jpeg_bytes(), 'mytrip.jpg'),
+            'photo': (_make_jpeg_bytes(), 'mytrip.jpg'),
             'lat': '48.8566',
             'lon': '2.3522',
         }, content_type='multipart/form-data')
@@ -298,7 +291,7 @@ class TestUploadResponseFields:
 
     def test_upload_without_gps_returns_400(self, admin_client):
         response = admin_client.post('/api/upload', data={
-            'photo': (self._make_jpeg_bytes(), 'no_gps.jpg'),
+            'photo': (_make_jpeg_bytes(), 'no_gps.jpg'),
         }, content_type='multipart/form-data')
 
         assert response.status_code == 400
@@ -307,16 +300,9 @@ class TestUploadResponseFields:
 
 
 class TestApiThumbLarge:
-    def _make_jpeg_bytes(self):
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new('RGB', (100, 100), color=(100, 149, 237)).save(buf, format='JPEG')
-        buf.seek(0)
-        return buf
-
     def _upload(self, admin_client):
         response = admin_client.post('/api/upload', data={
-            'photo': (self._make_jpeg_bytes(), 'fullscreen.jpg'),
+            'photo': (_make_jpeg_bytes(color=(100, 149, 237)), 'fullscreen.jpg'),
             'lat': '48.8566',
             'lon': '2.3522',
         }, content_type='multipart/form-data')
@@ -572,13 +558,8 @@ class TestRouteMode:
 
 class TestApiThumbAdminSession:
     def test_admin_session_without_token_returns_200(self, admin_client):
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
-        buf.seek(0)
-
         upload = admin_client.post('/api/upload', data={
-            'photo': (buf, 'thumbtest.jpg'),
+            'photo': (_make_jpeg_bytes(), 'thumbtest.jpg'),
             'lat': '48.0',
             'lon': '11.0',
         }, content_type='multipart/form-data')
@@ -598,13 +579,8 @@ class TestAdminPhotoList:
         assert response.status_code == 403
 
     def test_returns_uploaded_photos(self, admin_client):
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
-        buf.seek(0)
-
         admin_client.post('/api/upload', data={
-            'photo': (buf, 'listed.jpg'),
+            'photo': (_make_jpeg_bytes(), 'listed.jpg'),
             'lat': '48.0',
             'lon': '11.0',
         }, content_type='multipart/form-data')
@@ -669,12 +645,8 @@ class TestAdminPhotoList:
 
 class TestAdminDeletePhoto:
     def _upload(self, admin_client, name='delete_me.jpg'):
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
-        buf.seek(0)
         response = admin_client.post('/api/upload', data={
-            'photo': (buf, name),
+            'photo': (_make_jpeg_bytes(), name),
             'lat': '48.0',
             'lon': '11.0',
         }, content_type='multipart/form-data')
@@ -735,12 +707,8 @@ class TestAdminDeletePhoto:
 
 class TestApiThumb:
     def _upload(self, admin_client, name='thumb_variants.jpg'):
-        from PIL import Image
-        buf = io.BytesIO()
-        Image.new('RGB', (100, 100)).save(buf, format='JPEG')
-        buf.seek(0)
         response = admin_client.post('/api/upload', data={
-            'photo': (buf, name),
+            'photo': (_make_jpeg_bytes(), name),
             'lat': '48.0',
             'lon': '11.0',
         }, content_type='multipart/form-data')
@@ -820,3 +788,429 @@ class TestAdminVisitorStats:
         today = datetime.now().strftime('%Y-%m-%d')
         today_entry = next(d for d in data['daily'] if d['date'] == today)
         assert today_entry['count'] == 1
+
+
+class TestWeatherBackfill:
+    """start_weather_backfill_if_needed() laeuft synchron (die Ausfuehrung in einem
+    eigenen Thread passiert erst in start_background_services beim Serverstart) -
+    Tests koennen sie daher direkt aufrufen, ohne auf einen Hintergrund-Thread zu warten."""
+
+    def _seed_photo(self, filename='weather1.jpg', weather_temp=None):
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location, weather_temp) VALUES (?, ?, ?, ?, ?, ?)",
+                (filename, 48.0, 11.0, 1700000000.0, 'München, DE', weather_temp)
+            )
+            conn.commit()
+
+    def test_photos_with_existing_weather_are_skipped(self, app):
+        from app import start_weather_backfill_if_needed
+        self._seed_photo('has_weather.jpg', weather_temp=15.0)
+
+        with patch('app.requests.get') as mock_get:
+            start_weather_backfill_if_needed()
+            mock_get.assert_not_called()
+
+    def test_photos_without_timestamp_are_skipped(self, app):
+        from app import get_db, start_weather_backfill_if_needed
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('no_ts.jpg', 48.0, 11.0, None, 'X')
+            )
+            conn.commit()
+
+        with patch('app.requests.get') as mock_get:
+            start_weather_backfill_if_needed()
+            mock_get.assert_not_called()
+
+    def test_fills_missing_weather_for_all_matching_photos(self, app):
+        from app import start_weather_backfill_if_needed, get_db
+        self._seed_photo('a.jpg')
+        self._seed_photo('b.jpg')
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {'daily': {'temperature_2m_max': [20.0], 'weathercode': [1]}}
+        mock_resp.raise_for_status = lambda: None
+
+        with patch('app.requests.get', return_value=mock_resp), patch('app.time.sleep'):
+            start_weather_backfill_if_needed()
+
+        with get_db() as conn:
+            rows = conn.execute("SELECT weather_temp FROM photos WHERE filename IN ('a.jpg','b.jpg')").fetchall()
+        assert all(r['weather_temp'] == 20.0 for r in rows)
+
+
+class TestAdminRoutesList:
+    def _seed_photos(self):
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('seg1.jpg', 48.0, 11.0, 1700000000.0, 'München, DE')
+            )
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('seg2.jpg', 48.1, 11.2, 1700000100.0, 'Augsburg, DE')
+            )
+            conn.commit()
+
+    def test_without_admin_session_returns_403(self, client):
+        response = client.get('/api/admin/routes')
+        assert response.status_code == 403
+
+    def test_returns_segment_between_consecutive_photos(self, admin_client):
+        self._seed_photos()
+        response = admin_client.get('/api/admin/routes')
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data['total'] == 1
+        seg = data['segments'][0]
+        assert seg['start_filename'] == 'seg1.jpg'
+        assert seg['end_filename'] == 'seg2.jpg'
+        assert seg['mode'] is None
+        assert seg['distance_km'] > 0
+
+    def test_includes_cached_mode(self, admin_client, app):
+        self._seed_photos()
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO routes (start_filename, end_filename, geometry, mode) VALUES (?, ?, ?, ?)",
+                ('seg1.jpg', 'seg2.jpg', json.dumps({'type': 'LineString', 'coordinates': []}), 'flight')
+            )
+            conn.commit()
+
+        response = admin_client.get('/api/admin/routes')
+        seg = response.get_json()['segments'][0]
+        assert seg['mode'] == 'flight'
+
+    def test_pagination_respects_offset(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            for i in range(5):
+                conn.execute(
+                    "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                    (f'p{i}.jpg', 48.0 + i * 0.1, 11.0, 1700000000.0 + i, 'X')
+                )
+            conn.commit()
+
+        response = admin_client.get('/api/admin/routes?offset=2')
+        data = response.get_json()
+        assert data['total'] == 4
+        assert data['offset'] == 2
+        assert len(data['segments']) == 2
+
+
+class TestAdminSetRouteMode:
+    def _seed_photos(self):
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('m1.jpg', 48.0, 11.0, 1700000000.0, 'A')
+            )
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('m2.jpg', 48.1, 11.1, 1700000100.0, 'B')
+            )
+            conn.commit()
+
+    def test_without_admin_session_returns_403(self, client):
+        response = client.post('/api/admin/routes/mode',
+                               data=json.dumps({'start_filename': 'a.jpg', 'end_filename': 'b.jpg', 'mode': 'flight'}),
+                               content_type='application/json')
+        assert response.status_code == 403
+
+    def test_missing_fields_returns_400(self, admin_client):
+        response = admin_client.post('/api/admin/routes/mode',
+                                     data=json.dumps({}),
+                                     content_type='application/json')
+        assert response.status_code == 400
+
+    def test_invalid_mode_returns_400(self, admin_client):
+        self._seed_photos()
+        response = admin_client.post('/api/admin/routes/mode',
+                                     data=json.dumps({'start_filename': 'm1.jpg', 'end_filename': 'm2.jpg', 'mode': 'walk'}),
+                                     content_type='application/json')
+        assert response.status_code == 400
+
+    def test_photos_without_gps_returns_400(self, admin_client):
+        response = admin_client.post('/api/admin/routes/mode',
+                                     data=json.dumps({'start_filename': 'missing1.jpg', 'end_filename': 'missing2.jpg', 'mode': 'flight'}),
+                                     content_type='application/json')
+        assert response.status_code == 400
+
+    def test_setting_flight_stores_straight_line_geometry(self, admin_client, app):
+        self._seed_photos()
+        response = admin_client.post('/api/admin/routes/mode',
+                                     data=json.dumps({'start_filename': 'm1.jpg', 'end_filename': 'm2.jpg', 'mode': 'flight'}),
+                                     content_type='application/json')
+        assert response.status_code == 200
+        assert response.get_json()['mode'] == 'flight'
+
+        from app import get_db
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT geometry, mode FROM routes WHERE start_filename = ? AND end_filename = ?",
+                ('m1.jpg', 'm2.jpg')
+            ).fetchone()
+        assert row['mode'] == 'flight'
+        assert len(json.loads(row['geometry'])['coordinates']) == 2
+
+    def test_setting_drive_for_far_apart_photos_still_queries_osrm(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('far1.jpg', 52.52, 13.405, 1700000000.0, 'Berlin, DE')
+            )
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('far2.jpg', 48.8566, 2.3522, 1700000100.0, 'Paris, FR')
+            )
+            conn.commit()
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            'code': 'Ok',
+            'routes': [{'geometry': {'type': 'LineString', 'coordinates': [[13.4, 52.5], [7.5, 50.5], [2.35, 48.86]]}}]
+        }
+        mock_resp.raise_for_status = lambda: None
+
+        # Berlin -> Paris liegt deutlich ueber OSRM_MAX_KM - ohne bypass_distance_cap
+        # wuerde fetch_osrm_route requests.get gar nicht erst aufrufen.
+        with patch('app.requests.get', return_value=mock_resp) as mock_get:
+            response = admin_client.post('/api/admin/routes/mode',
+                                         data=json.dumps({'start_filename': 'far1.jpg', 'end_filename': 'far2.jpg', 'mode': 'drive'}),
+                                         content_type='application/json')
+
+        assert response.status_code == 200
+        mock_get.assert_called_once()
+
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT geometry, mode FROM routes WHERE start_filename = ? AND end_filename = ?",
+                ('far1.jpg', 'far2.jpg')
+            ).fetchone()
+        assert row['mode'] == 'drive'
+        assert len(json.loads(row['geometry'])['coordinates']) == 3
+
+    def test_setting_drive_falls_back_to_straight_line_when_osrm_fails(self, admin_client, app):
+        self._seed_photos()
+        with patch('app.requests.get', side_effect=Exception('timeout')):
+            response = admin_client.post('/api/admin/routes/mode',
+                                         data=json.dumps({'start_filename': 'm1.jpg', 'end_filename': 'm2.jpg', 'mode': 'drive'}),
+                                         content_type='application/json')
+        assert response.status_code == 200
+
+        from app import get_db
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT geometry, mode FROM routes WHERE start_filename = ? AND end_filename = ?",
+                ('m1.jpg', 'm2.jpg')
+            ).fetchone()
+        assert row['mode'] == 'drive'
+        assert len(json.loads(row['geometry'])['coordinates']) == 2
+
+    def test_overriding_existing_route_updates_it(self, admin_client, app):
+        self._seed_photos()
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO routes (start_filename, end_filename, geometry, mode) VALUES (?, ?, ?, ?)",
+                ('m1.jpg', 'm2.jpg', json.dumps({'type': 'LineString', 'coordinates': [[0, 0], [1, 1]]}), 'drive')
+            )
+            conn.commit()
+
+        response = admin_client.post('/api/admin/routes/mode',
+                                     data=json.dumps({'start_filename': 'm1.jpg', 'end_filename': 'm2.jpg', 'mode': 'flight'}),
+                                     content_type='application/json')
+        assert response.status_code == 200
+
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT mode FROM routes WHERE start_filename = ? AND end_filename = ?",
+                ('m1.jpg', 'm2.jpg')
+            ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]['mode'] == 'flight'
+
+
+class TestAdminLog:
+    def test_without_admin_session_returns_403(self, client):
+        response = client.get('/api/admin/log')
+        assert response.status_code == 403
+
+    def test_empty_log_returns_empty_list(self, admin_client):
+        response = admin_client.get('/api/admin/log')
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data['entries'] == []
+        assert data['total'] == 0
+
+    def test_successful_login_is_logged(self, client):
+        client.post('/admin/login', data=json.dumps({'admin_token': 'test_admin'}), content_type='application/json')
+        response = client.get('/api/admin/log')
+        actions = [e['action'] for e in response.get_json()['entries']]
+        assert 'login' in actions
+
+    def test_failed_login_is_logged(self, client):
+        client.post('/admin/login', data=json.dumps({'admin_token': 'wrong'}), content_type='application/json')
+        with client.session_transaction() as sess:
+            sess['is_admin'] = True  # nur um das Log auszulesen, unabhaengig vom Login-Versuch oben
+        response = client.get('/api/admin/log')
+        actions = [e['action'] for e in response.get_json()['entries']]
+        assert 'login_failed' in actions
+
+    def test_logout_is_logged(self, admin_client):
+        admin_client.post('/admin/logout')
+        with admin_client.session_transaction() as sess:
+            sess['is_admin'] = True
+        response = admin_client.get('/api/admin/log')
+        actions = [e['action'] for e in response.get_json()['entries']]
+        assert 'logout' in actions
+
+    def test_upload_is_logged(self, admin_client):
+        admin_client.post('/api/upload', data={
+            'photo': (_make_jpeg_bytes(), 'logged.jpg'),
+            'lat': '48.0',
+            'lon': '11.0',
+        }, content_type='multipart/form-data')
+
+        response = admin_client.get('/api/admin/log')
+        entries = [e for e in response.get_json()['entries'] if e['action'] == 'upload']
+        assert len(entries) == 1
+        assert 'logged' in entries[0]['detail']
+
+    def test_delete_is_logged(self, admin_client):
+        upload = admin_client.post('/api/upload', data={
+            'photo': (_make_jpeg_bytes(), 'to_delete.jpg'),
+            'lat': '48.0',
+            'lon': '11.0',
+        }, content_type='multipart/form-data')
+        filename = upload.get_json()['file']
+
+        admin_client.delete(f'/api/admin/photos/{filename}')
+
+        response = admin_client.get('/api/admin/log')
+        actions = [e['action'] for e in response.get_json()['entries']]
+        assert 'delete_photo' in actions
+
+    def test_update_location_is_logged(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('log_loc.jpg', 0.0, 0.0, 1700000000.0, 'Unbekannt')
+            )
+            conn.commit()
+
+        admin_client.post('/api/update_location', data=json.dumps({
+            'filename': 'log_loc.jpg', 'lat': 48.1351, 'lon': 11.5820
+        }), content_type='application/json')
+
+        response = admin_client.get('/api/admin/log')
+        actions = [e['action'] for e in response.get_json()['entries']]
+        assert 'update_location' in actions
+
+    def test_note_and_favorite_changes_are_logged(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('log_note.jpg', 48.0, 11.0, 1700000000.0, 'X')
+            )
+            conn.commit()
+
+        admin_client.post('/api/admin/photos/log_note.jpg/note',
+                          data=json.dumps({'note': 'Test'}), content_type='application/json')
+        admin_client.post('/api/admin/photos/log_note.jpg/favorite',
+                          data=json.dumps({'favorite': True}), content_type='application/json')
+
+        response = admin_client.get('/api/admin/log')
+        actions = [e['action'] for e in response.get_json()['entries']]
+        assert 'update_note' in actions
+        assert 'set_favorite' in actions
+
+    def test_route_mode_change_is_logged(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('log_r1.jpg', 48.0, 11.0, 1700000000.0, 'A')
+            )
+            conn.execute(
+                "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
+                ('log_r2.jpg', 48.1, 11.1, 1700000100.0, 'B')
+            )
+            conn.commit()
+
+        admin_client.post('/api/admin/routes/mode',
+                          data=json.dumps({'start_filename': 'log_r1.jpg', 'end_filename': 'log_r2.jpg', 'mode': 'flight'}),
+                          content_type='application/json')
+
+        response = admin_client.get('/api/admin/log')
+        actions = [e['action'] for e in response.get_json()['entries']]
+        assert 'set_route_mode' in actions
+
+    def test_pagination_respects_offset(self, admin_client, app):
+        from app import _log_admin_action
+        for i in range(5):
+            _log_admin_action('test_action', f'entry {i}')
+
+        response = admin_client.get('/api/admin/log?offset=2')
+        data = response.get_json()
+        assert data['total'] == 5
+        assert data['offset'] == 2
+        assert len(data['entries']) == 3
+
+    def test_entries_are_ordered_most_recent_first(self, admin_client, app):
+        from app import _log_admin_action
+        _log_admin_action('first')
+        _log_admin_action('second')
+
+        response = admin_client.get('/api/admin/log')
+        actions = [e['action'] for e in response.get_json()['entries']]
+        assert actions[:2] == ['second', 'first']
+
+    def test_search_matches_action(self, admin_client, app):
+        from app import _log_admin_action
+        _log_admin_action('delete_photo', 'a.jpg')
+        _log_admin_action('login', '127.0.0.1')
+
+        response = admin_client.get('/api/admin/log?q=delete')
+        data = response.get_json()
+        assert data['total'] == 1
+        assert data['entries'][0]['action'] == 'delete_photo'
+
+    def test_search_matches_detail(self, admin_client, app):
+        from app import _log_admin_action
+        _log_admin_action('update_note', 'eiffelturm.jpg')
+        _log_admin_action('update_note', 'sonstwas.jpg')
+
+        response = admin_client.get('/api/admin/log?q=eiffelturm')
+        data = response.get_json()
+        assert data['total'] == 1
+        assert data['entries'][0]['detail'] == 'eiffelturm.jpg'
+
+    def test_search_without_match_returns_empty(self, admin_client, app):
+        from app import _log_admin_action
+        _log_admin_action('login', '127.0.0.1')
+
+        response = admin_client.get('/api/admin/log?q=nonexistent-action')
+        data = response.get_json()
+        assert data['total'] == 0
+        assert data['entries'] == []
+
+    def test_search_still_respects_pagination(self, admin_client, app):
+        from app import _log_admin_action
+        for i in range(3):
+            _log_admin_action('upload', f'match_{i}.jpg')
+
+        response = admin_client.get('/api/admin/log?q=match&offset=1')
+        data = response.get_json()
+        assert data['total'] == 3
+        assert data['offset'] == 1
+        assert len(data['entries']) == 2

@@ -1,5 +1,3 @@
-// Einstiegspunkt: instanziiert alle Module und verdrahtet ihre Callbacks.
-
 import { fetchRoute, fetchStats } from './api.js';
 import { MapController }   from './map.js';
 import { GalleryController } from './gallery.js';
@@ -99,7 +97,6 @@ async function init() {
 
 init();
 
-// Stats-Modal öffnen (Einzelklick) / Admin-Bereich öffnen (Doppelklick)
 dom.btnStats?.addEventListener('click', createClickDispatcher({
     onSingleClick: () => dom.statsModal?.classList.add('show'),
     onDoubleClick: () => { window.location.href = '/admin'; },
@@ -129,7 +126,6 @@ function extractCountryCode(locationString) {
 }
 
 /**
- * Zaehlt die Fotos pro Land - Grundlage fuer die Länder-Liste im Stats-Modal.
  * Reihenfolge = Reihenfolge des ersten Fotos je Land (photos ist zeitlich sortiert).
  * @param {Array<object>} photos - müssen countryCode enthalten
  * @returns {Array<{code: string, count: number}>}
@@ -154,7 +150,6 @@ function flagUrl(code) {
 let regionNames = null;
 try { regionNames = new Intl.DisplayNames(['de'], { type: 'region' }); } catch (_) { /* alter Browser */ }
 
-/** Lokalisierter Ländername, mit dem Code als Fallback falls Intl.DisplayNames fehlt. */
 function countryName(code) {
     try {
         return regionNames?.of(code) || code;
@@ -164,7 +159,6 @@ function countryName(code) {
 }
 
 /**
- * Rendert die Länder-Liste (Flagge + Name + Fotoanzahl) im Stats-Modal.
  * @param {Array<{code: string, count: number}>} countries
  */
 function renderCountryList(countries) {

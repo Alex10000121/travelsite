@@ -17,7 +17,6 @@ function makeGallery() {
     return new GalleryController(NULL_DOM, 'test-token');
 }
 
-// Fünf Fotos aus drei Ländern: DE (2), FR (2), ES (1)
 const PHOTOS = [
     { filename: 'a.jpg', location: 'Berlin, DE',  date_str: '01.01.2024', countryCode: 'DE' },
     { filename: 'b.jpg', location: 'Hamburg, DE', date_str: '02.01.2024', countryCode: 'DE' },
@@ -39,10 +38,15 @@ function makeCaptionDom() {
     };
 }
 
+function makeCaptionGallery() {
+    const dom = makeCaptionDom();
+    const g = new GalleryController(dom, 'test-token');
+    return { dom, g };
+}
+
 describe('optionale Caption-Felder (Notiz/Favorit/Wetter)', () => {
     it('blendet Notiz/Wetter/Favorit standardmaessig aus, wenn nicht vorhanden', () => {
-        const dom = makeCaptionDom();
-        const g = new GalleryController(dom, 'test-token');
+        const { dom, g } = makeCaptionGallery();
         g.loadPhotos([{ ...PHOTOS[0] }], 0);
 
         expect(dom.txtNote.style.display).toBe('none');
@@ -51,8 +55,7 @@ describe('optionale Caption-Felder (Notiz/Favorit/Wetter)', () => {
     });
 
     it('zeigt eine vorhandene Notiz an', () => {
-        const dom = makeCaptionDom();
-        const g = new GalleryController(dom, 'test-token');
+        const { dom, g } = makeCaptionGallery();
         g.loadPhotos([{ ...PHOTOS[0], note: 'Bestes Essen der Reise' }], 0);
 
         expect(dom.txtNote.style.display).toBe('block');
@@ -60,16 +63,14 @@ describe('optionale Caption-Felder (Notiz/Favorit/Wetter)', () => {
     });
 
     it('zeigt den Favoriten-Stern, wenn is_favorite gesetzt ist', () => {
-        const dom = makeCaptionDom();
-        const g = new GalleryController(dom, 'test-token');
+        const { dom, g } = makeCaptionGallery();
         g.loadPhotos([{ ...PHOTOS[0], is_favorite: true }], 0);
 
         expect(dom.favoriteBadge.style.display).toBe('block');
     });
 
     it('zeigt Wetter-Icon und gerundete Temperatur', () => {
-        const dom = makeCaptionDom();
-        const g = new GalleryController(dom, 'test-token');
+        const { dom, g } = makeCaptionGallery();
         g.loadPhotos([{ ...PHOTOS[0], weather_temp: 23.6, weather_code: 0 }], 0);
 
         expect(dom.txtWeather.style.display).toBe('block');
@@ -77,8 +78,7 @@ describe('optionale Caption-Felder (Notiz/Favorit/Wetter)', () => {
     });
 
     it('aktualisiert die Felder beim Fotowechsel korrekt (kein Ueberbleibsel vom vorherigen Foto)', () => {
-        const dom = makeCaptionDom();
-        const g = new GalleryController(dom, 'test-token');
+        const { dom, g } = makeCaptionGallery();
         g.loadPhotos([
             { ...PHOTOS[0], note: 'Notiz zu Foto 1' },
             { ...PHOTOS[1] },
@@ -130,62 +130,62 @@ describe('changePhoto', () => {
 describe('changeLocation vorwärts (+1)', () => {
     it('springt vom ersten Foto eines Landes zum ersten des nächsten', () => {
         const g = makeGallery();
-        g.loadPhotos(PHOTOS, 0); // Berlin (DE, Index 0)
+        g.loadPhotos(PHOTOS, 0);
         g.changeLocation(1);
-        expect(g.currentIndex).toBe(2); // Paris (FR, Index 2)
+        expect(g.currentIndex).toBe(2);
         expect(g.currentPhoto.countryCode).toBe('FR');
     });
 
     it('springt auch aus der Mitte eines Landes heraus korrekt', () => {
         const g = makeGallery();
-        g.loadPhotos(PHOTOS, 1); // Hamburg (DE, Index 1)
+        g.loadPhotos(PHOTOS, 1);
         g.changeLocation(1);
-        expect(g.currentIndex).toBe(2); // Paris (FR)
+        expect(g.currentIndex).toBe(2);
     });
 
     it('springt von FR zu ES', () => {
         const g = makeGallery();
-        g.loadPhotos(PHOTOS, 2); // Paris (FR)
+        g.loadPhotos(PHOTOS, 2);
         g.changeLocation(1);
-        expect(g.currentIndex).toBe(4); // Madrid (ES)
+        expect(g.currentIndex).toBe(4);
     });
 
     it('springt vom letzten Land wieder zum ersten (wrap-around)', () => {
         const g = makeGallery();
-        g.loadPhotos(PHOTOS, 4); // Madrid (ES) — letztes Land
+        g.loadPhotos(PHOTOS, 4);
         g.changeLocation(1);
-        expect(g.currentIndex).toBe(0); // Berlin (DE) — erstes Land
+        expect(g.currentIndex).toBe(0);
     });
 });
 
 describe('changeLocation rückwärts (-1)', () => {
     it('springt zum ersten Foto des vorherigen Landes', () => {
         const g = makeGallery();
-        g.loadPhotos(PHOTOS, 2); // Paris (FR, Index 2)
+        g.loadPhotos(PHOTOS, 2);
         g.changeLocation(-1);
-        expect(g.currentIndex).toBe(0); // Berlin (DE, Index 0)
+        expect(g.currentIndex).toBe(0);
         expect(g.currentPhoto.countryCode).toBe('DE');
     });
 
     it('landet immer beim ERSTEN Foto des Ziel-Landes, nicht beim letzten', () => {
         const g = makeGallery();
-        g.loadPhotos(PHOTOS, 3); // Lyon (FR, Index 3) — zweites FR-Foto
+        g.loadPhotos(PHOTOS, 3);
         g.changeLocation(-1);
-        expect(g.currentIndex).toBe(0); // Berlin (DE) — erstes DE-Foto, nicht Hamburg
+        expect(g.currentIndex).toBe(0);
     });
 
     it('springt von ES zu FR', () => {
         const g = makeGallery();
-        g.loadPhotos(PHOTOS, 4); // Madrid (ES)
+        g.loadPhotos(PHOTOS, 4);
         g.changeLocation(-1);
-        expect(g.currentIndex).toBe(2); // Paris (FR)
+        expect(g.currentIndex).toBe(2);
     });
 
     it('springt vom ersten Land zum letzten (wrap-around)', () => {
         const g = makeGallery();
-        g.loadPhotos(PHOTOS, 0); // Berlin (DE) — erstes Land
+        g.loadPhotos(PHOTOS, 0);
         g.changeLocation(-1);
-        expect(g.currentIndex).toBe(4); // Madrid (ES) — letztes Land
+        expect(g.currentIndex).toBe(4);
     });
 
 });

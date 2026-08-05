@@ -1,11 +1,19 @@
-// Einstiegspunkt für die eingeloggte /admin-Ansicht: instanziiert die Admin-Feature-Karten.
-
 import { MapController } from './map.js';
 import { AdminUploadCard } from './admin-upload.js';
 import { AdminPhotoManager } from './admin-manage.js';
 import { AdminVisitorStats } from './admin-visitors.js';
+import { AdminRouteManager } from './admin-routes.js';
+import { AdminLog } from './admin-log.js';
+import { AdminTabs } from './admin-tabs.js';
 
-const uploadMap = new MapController(document.getElementById('admin-map'), { center: [50, 10], zoom: 4 });
+new AdminTabs({
+    tabButtons: document.querySelectorAll('.admin-tab'),
+    panels:     document.querySelectorAll('.admin-tab-panel'),
+});
+
+const defaultMapOptions = { center: [50, 10], zoom: 4 };
+
+const uploadMap = new MapController(document.getElementById('admin-map'), defaultMapOptions);
 
 new AdminUploadCard({
     fileInput:     document.getElementById('admin-file-input'),
@@ -18,7 +26,7 @@ new AdminUploadCard({
     log:           document.getElementById('admin-upload-log'),
 }, uploadMap);
 
-const fixMap = new MapController(document.getElementById('admin-fix-map'), { center: [50, 10], zoom: 4 });
+const fixMap = new MapController(document.getElementById('admin-fix-map'), defaultMapOptions);
 
 new AdminPhotoManager({
     list:         document.getElementById('admin-photo-list'),
@@ -36,4 +44,15 @@ new AdminVisitorStats({
     tooltip:        document.getElementById('admin-visitor-tooltip'),
 });
 
-// Weitere Admin-Feature-Karten werden hier analog instanziiert.
+new AdminRouteManager({
+    list:        document.getElementById('admin-route-list'),
+    loadMoreBtn: document.getElementById('admin-route-load-more'),
+});
+
+new AdminLog({
+    list:        document.getElementById('admin-log-list'),
+    searchInput: document.getElementById('admin-log-search'),
+    countEl:     document.getElementById('admin-log-count'),
+    loadMoreBtn: document.getElementById('admin-log-load-more'),
+});
+

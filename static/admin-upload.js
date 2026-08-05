@@ -1,6 +1,3 @@
-// Upload-Feature der /admin-Seite: Dateiauswahl, EXIF-GPS-Lesen,
-// Mini-Karte als Fallback-Picker, Fortschrittsanzeige.
-
 import { uploadPhoto } from './api.js';
 
 async function readExifFromFile(file) {
@@ -18,19 +15,6 @@ async function readExifFromFile(file) {
 
 export class AdminUploadCard {
 
-    /**
-     * @param {object} dom
-     * @param {HTMLInputElement} dom.fileInput
-     * @param {HTMLElement}      dom.chooseBtn
-     * @param {HTMLElement}      dom.gpsPicker
-     * @param {HTMLElement}      dom.gpsConfirmBtn
-     * @param {HTMLElement}      dom.progressWrap
-     * @param {HTMLElement}      dom.progressFill
-     * @param {HTMLElement}      dom.progressText
-     * @param {HTMLElement}      dom.log
-     *
-     * @param {import('./map.js').MapController} map - Mini-Karte für den GPS-Fallback-Picker
-     */
     constructor(dom, map) {
         this._dom = dom;
         this._map = map;

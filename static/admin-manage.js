@@ -140,27 +140,12 @@ export class AdminPhotoManager {
             }
         });
 
-        const fixBtn = document.createElement('button');
-        fixBtn.type = 'button';
-        fixBtn.className = 'admin-fix-btn';
-        fixBtn.textContent = '📍';
-        fixBtn.title = 'GPS-Position korrigieren';
-        fixBtn.setAttribute('aria-label', fixBtn.title);
+        const fixBtn = this._createIconButton('admin-fix-btn', '📍', 'GPS-Position korrigieren');
         fixBtn.addEventListener('click', () => this._openFixModal(photo));
 
-        const noteBtn = document.createElement('button');
-        noteBtn.type = 'button';
-        noteBtn.className = 'admin-note-btn';
-        noteBtn.textContent = '📝';
-        noteBtn.title = 'Notiz';
-        noteBtn.setAttribute('aria-label', noteBtn.title);
+        const noteBtn = this._createIconButton('admin-note-btn', '📝', 'Notiz');
 
-        const delBtn = document.createElement('button');
-        delBtn.type = 'button';
-        delBtn.className = 'admin-delete-btn';
-        delBtn.textContent = '🗑';
-        delBtn.title = 'Löschen';
-        delBtn.setAttribute('aria-label', delBtn.title);
+        const delBtn = this._createIconButton('admin-delete-btn', '🗑', 'Löschen');
         delBtn.addEventListener('click', () => this._handleDelete(photo, li));
 
         actions.append(favBtn, fixBtn, noteBtn, delBtn);
@@ -204,6 +189,16 @@ export class AdminPhotoManager {
 
         wrap.append(textarea, saveBtn);
         return wrap;
+    }
+
+    _createIconButton(className, text, title) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = className;
+        btn.textContent = text;
+        btn.title = title;
+        btn.setAttribute('aria-label', title);
+        return btn;
     }
 
     _renderFavBtn(btn, active) {

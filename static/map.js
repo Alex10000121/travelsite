@@ -391,13 +391,7 @@ export class MapController {
 
         const features = this._map.queryRenderedFeatures(undefined, { layers: ['unclustered-point'] });
         const visibleIndices = new Set(features.map(f => f.properties.index));
-
-        for (const [index, marker] of this._photoMarkers) {
-            if (!visibleIndices.has(index)) {
-                marker.remove();
-                this._photoMarkers.delete(index);
-            }
-        }
+        this._pruneMarkers(this._photoMarkers, visibleIndices);
 
         for (const feature of features) {
             const index = feature.properties.index;
@@ -444,13 +438,7 @@ export class MapController {
 
         const features = this._map.queryRenderedFeatures(undefined, { layers: ['clusters'] });
         const visibleIds = new Set(features.map(f => f.properties.cluster_id));
-
-        for (const [clusterId, marker] of this._clusterMarkers) {
-            if (!visibleIds.has(clusterId)) {
-                marker.remove();
-                this._clusterMarkers.delete(clusterId);
-            }
-        }
+        this._pruneMarkers(this._clusterMarkers, visibleIds);
 
         for (const feature of features) {
             const clusterId = feature.properties.cluster_id;
@@ -496,6 +484,20 @@ export class MapController {
         }
     }
 
+    _pruneMarkers(markerMap, visibleKeys) {
+        for (const [key, marker] of markerMap) {
+            if (!visibleKeys.has(key)) {
+                marker.remove();
+                markerMap.delete(key);
+            }
+        }
+    }
+
+    _clearMarkers(markerMap) {
+        for (const marker of markerMap.values()) marker.remove();
+        markerMap.clear();
+    }
+
     _startSpin() {
         const degreesPerFrame = 0.3;
         let rotated = 0;
@@ -538,10 +540,8 @@ export class MapController {
     togglePhotoPins() {
         this._pinsVisible = !this._pinsVisible;
         if (!this._pinsVisible) {
-            for (const marker of this._photoMarkers.values()) marker.remove();
-            this._photoMarkers.clear();
-            for (const marker of this._clusterMarkers.values()) marker.remove();
-            this._clusterMarkers.clear();
+            this._clearMarkers(this._photoMarkers);
+            this._clearMarkers(this._clusterMarkers);
         } else {
             this._syncPhotoMarkers();
             this._syncClusterMarkers();

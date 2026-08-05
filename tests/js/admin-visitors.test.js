@@ -78,7 +78,7 @@ describe('buildChartPaths', () => {
 });
 
 describe('nearestPointIndex', () => {
-    const points = buildChartPoints(DAILY, 100, 50, 0); // x: 0, 50, 100
+    const points = buildChartPoints(DAILY, 100, 50, 0);
 
     it('findet den exakt getroffenen Punkt', () => {
         expect(nearestPointIndex(points, 50)).toBe(1);
@@ -103,6 +103,14 @@ function makeDom() {
     };
 }
 
+async function loadVisitorStats(response) {
+    fetchVisitorStats.mockResolvedValue(response);
+    const dom = makeDom();
+    const stats = new AdminVisitorStats(dom);
+    await stats.load();
+    return { dom, stats };
+}
+
 describe('AdminVisitorStats', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -110,20 +118,14 @@ describe('AdminVisitorStats', () => {
     });
 
     it('rendert Gesamt- und Live-Zahl in die Stat-Felder', async () => {
-        fetchVisitorStats.mockResolvedValue({ total: 42, active_now: 3, daily: DAILY });
-        const dom = makeDom();
-        const stats = new AdminVisitorStats(dom);
-        await stats.load();
+        const { dom } = await loadVisitorStats({ total: 42, active_now: 3, daily: DAILY });
 
         expect(dom.totalEl.textContent).toBe('42');
         expect(dom.activeEl.textContent).toBe('3');
     });
 
     it('hängt ein SVG mit Linie und Fläche in den Chart-Container', async () => {
-        fetchVisitorStats.mockResolvedValue({ total: 42, active_now: 3, daily: DAILY });
-        const dom = makeDom();
-        const stats = new AdminVisitorStats(dom);
-        await stats.load();
+        const { dom } = await loadVisitorStats({ total: 42, active_now: 3, daily: DAILY });
 
         expect(dom.chartContainer.querySelector('.visitor-chart-line')).not.toBeNull();
         expect(dom.chartContainer.querySelector('.visitor-chart-area')).not.toBeNull();
@@ -138,10 +140,7 @@ describe('AdminVisitorStats', () => {
     });
 
     it('lässt den Chart-Container leer, wenn keine Tagesdaten vorliegen', async () => {
-        fetchVisitorStats.mockResolvedValue({ total: 0, active_now: 0, daily: [] });
-        const dom = makeDom();
-        const stats = new AdminVisitorStats(dom);
-        await stats.load();
+        const { dom } = await loadVisitorStats({ total: 0, active_now: 0, daily: [] });
 
         expect(dom.chartContainer.querySelector('svg')).toBeNull();
     });

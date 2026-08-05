@@ -17,12 +17,22 @@
     <div class="admin-container">
         <header class="admin-header">
             <h1>Admin</h1>
-            <form method="post" action="{{ url_for('admin_logout') }}">
-                <button type="submit" class="admin-logout-btn">Abmelden</button>
-            </form>
+            <div class="admin-header-actions">
+                <a href="{{ url_for('index') }}" class="admin-back-btn">Zur Website</a>
+                <form method="post" action="{{ url_for('admin_logout') }}">
+                    <button type="submit" class="admin-logout-btn">Abmelden</button>
+                </form>
+            </div>
         </header>
 
-        <div class="admin-grid">
+        <nav class="admin-tabs" role="tablist" aria-label="Admin-Bereiche">
+            <button type="button" class="admin-tab active" data-tab="photos" role="tab" aria-selected="true">Fotos</button>
+            <button type="button" class="admin-tab" data-tab="routes" role="tab" aria-selected="false">Routen</button>
+            <button type="button" class="admin-tab" data-tab="stats" role="tab" aria-selected="false">Statistik</button>
+            <button type="button" class="admin-tab" data-tab="log" role="tab" aria-selected="false">Verlauf</button>
+        </nav>
+
+        <div class="admin-grid admin-tab-panel" data-tab-panel="photos">
 
             <section class="admin-card" id="card-upload">
                 <h2>Fotos hochladen</h2>
@@ -61,6 +71,25 @@
                 </button>
             </section>
 
+        </div>
+
+        <div class="admin-grid admin-tab-panel" data-tab-panel="routes" style="display:none;">
+
+            <section class="admin-card" id="card-routes">
+                <h2>Routen</h2>
+                <p class="admin-hint">Automatisch erkannte Fahrt-/Flugstrecken zwischen aufeinanderfolgenden Fotos. Falsch erkannte Strecken hier korrigieren.</p>
+
+                <ul id="admin-route-list" class="admin-route-list" aria-label="Streckenabschnitte"></ul>
+
+                <button type="button" id="admin-route-load-more" class="admin-load-more-btn" style="display:none;">
+                    Weitere laden
+                </button>
+            </section>
+
+        </div>
+
+        <div class="admin-grid admin-tab-panel" data-tab-panel="stats" style="display:none;">
+
             <section class="admin-card" id="card-visitors">
                 <h2>Besucher</h2>
 
@@ -85,7 +114,25 @@
                 </div>
             </section>
 
-            <!-- Weitere Admin-Features werden hier als zusätzliche .admin-card-Sections ergänzt -->
+        </div>
+
+        <div class="admin-grid admin-tab-panel" data-tab-panel="log" style="display:none;">
+
+            <section class="admin-card" id="card-log">
+                <h2>Verlauf</h2>
+                <p class="admin-hint">Protokoll der Admin-Aktionen: Login/Logout, Uploads, Löschungen, GPS-/Notiz-/Favoriten-Änderungen, Routen-Korrekturen.</p>
+
+                <input type="search" id="admin-log-search" class="admin-search-input"
+                       placeholder="Aktion oder Detail suchen…" aria-label="Verlauf durchsuchen">
+
+                <ul id="admin-log-list" class="admin-log-list" aria-label="Aktionsprotokoll"></ul>
+
+                <p id="admin-log-count" class="admin-hint"></p>
+
+                <button type="button" id="admin-log-load-more" class="admin-load-more-btn" style="display:none;">
+                    Weitere laden
+                </button>
+            </section>
 
         </div>
     </div>

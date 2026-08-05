@@ -100,6 +100,13 @@ def _access_granted(token):
         return True
     return secrets.compare_digest(token, CONFIG['ACCESS_TOKEN'])
 
+
+def _viewer_access_granted(token):
+    # Eine eingeloggte Admin-Session ist ein hoeheres Privileg als der ACCESS_TOKEN
+    # (volle Schreibrechte) - reicht also auch ohne separaten Token fuer Lesezugriff
+    # auf die oeffentliche Galerie, z.B. ueber den "Zur Website"-Link im Admin-Bereich.
+    return session.get('is_admin') or _access_granted(token)
+
 # Muss ein eigenstaendiges, zufaelliges Secret sein - ein von ADMIN_TOKEN abgeleiteter
 # Schluessel waere ein Offline-Orakel, mit dem sich das Admin-Passwort aus einem
 # abgefangenen Session-Cookie zurückrechnen liesse.
@@ -259,8 +266,8 @@ def fetch_weather(lat, lon, timestamp):
 OSRM_MAX_KM = 500
 
 
-def fetch_osrm_route(lat1, lon1, lat2, lon2):
-    if calculate_distance(lat1, lon1, lat2, lon2) > OSRM_MAX_KM:
+def fetch_osrm_route(lat1, lon1, lat2, lon2, bypass_distance_cap=False):
+    if not bypass_distance_cap and calculate_distance(lat1, lon1, lat2, lon2) > OSRM_MAX_KM:
         return None
     url = (
         f"https://router.project-osrm.org/route/v1/driving/"
@@ -325,6 +332,35 @@ def _fetch_and_store_weather(filename, lat, lon, timestamp):
         logger.warning(f"Weather store error for {filename}: {e}")
 
 
+def _run_weather_backfill(rows):
+    for filename, lat, lon, timestamp in rows:
+        _fetch_and_store_weather(filename, lat, lon, timestamp)
+        time.sleep(1)
+
+
+def start_weather_backfill_if_needed():
+    """Traegt Wetterdaten fuer Altfotos nach, die vor Einfuehrung der Wetteranzeige
+    indiziert wurden (weather_temp noch NULL) - wird beim Serverstart automatisch
+    aufgerufen, analog zu initial_scan/fetch_missing_routes. Kein Admin-Trigger noetig:
+    ist einmal alles nachgetragen, findet der Query beim naechsten Start nichts mehr."""
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT filename, lat, lon, timestamp FROM photos "
+                "WHERE lat IS NOT NULL AND lon IS NOT NULL AND timestamp IS NOT NULL AND weather_temp IS NULL"
+            ).fetchall()
+    except Exception as e:
+        logger.error(f"Weather backfill query error: {e}")
+        return
+
+    rows = [(r['filename'], r['lat'], r['lon'], r['timestamp']) for r in rows]
+    if not rows:
+        return
+
+    logger.info(f"Weather backfill: trage Wetterdaten fuer {len(rows)} Fotos nach.")
+    _run_weather_backfill(rows)
+
+
 def _thumb_path(filename, suffix=''):
     has_subdir = '/' in filename or '\\' in filename
     flat_name = filename.replace('/', '_').replace('\\', '_')
@@ -343,6 +379,12 @@ LARGE_THUMB_MAX = (1920, 1920)
 LARGE_THUMB_QUALITY = 82
 
 
+def _to_rgb(img):
+    if img.mode in ("RGBA", "P"):
+        return img.convert("RGB")
+    return img
+
+
 def generate_thumbnails(original_path, thumb_path, blur_thumb_path, large_thumb_path=None):
     need_main = not os.path.exists(thumb_path)
     need_blur = not os.path.exists(blur_thumb_path)
@@ -353,9 +395,7 @@ def generate_thumbnails(original_path, thumb_path, blur_thumb_path, large_thumb_
     try:
         with Image.open(original_path) as img:
             img = ImageOps.exif_transpose(img)
-
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
+            img = _to_rgb(img)
 
             if need_large:
                 # Fuer die Fullscreen-Ansicht - deutlich kleiner als das Kamera-Original,
@@ -453,6 +493,15 @@ def init_db():
             ''')
             _add_column_if_missing(conn, 'routes', 'mode', "TEXT NOT NULL DEFAULT 'drive'")
             _backfill_route_modes(conn)
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS admin_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp REAL NOT NULL,
+                    action TEXT NOT NULL,
+                    detail TEXT
+                )
+            ''')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_admin_log_timestamp ON admin_log(timestamp)')
         logger.info("Database initialized.")
     except Exception as e:
         logger.critical(f"Database init failed: {e}")
@@ -611,11 +660,34 @@ def admin_required(f):
     return wrapper
 
 
+def _log_admin_action(action, detail=None):
+    try:
+        with get_db() as conn:
+            conn.execute("INSERT INTO admin_log (timestamp, action, detail) VALUES (?, ?, ?)",
+                         (time.time(), action, detail))
+    except Exception as e:
+        logger.warning(f"Admin log write error: {e}")
+
+
+def _parse_offset():
+    try:
+        return max(0, int(request.args.get('offset', 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _build_like_filter(q, col1, col2):
+    if not q:
+        return "", ()
+    like = f"%{q}%"
+    return f"WHERE {col1} LIKE ? OR {col2} LIKE ?", (like, like)
+
+
 @app.route('/')
 @limiter.limit("20 per minute")
 def index():
     token = request.args.get('token', '')
-    if _access_granted(token):
+    if _viewer_access_granted(token):
         return render_template('index.html', token=token or 'public', visitor_count=track_visitor_count(),
                                maptiler_key=CONFIG['MAPTILER_API_KEY'])
     return render_template('login.html', contact_email=CONFIG['CONTACT_EMAIL'])
@@ -636,12 +708,16 @@ def admin_login():
         session.clear()
         session['is_admin'] = True
         session.permanent = True
+        _log_admin_action('login', request.remote_addr)
         return jsonify({'success': True})
+    _log_admin_action('login_failed', request.remote_addr)
     return jsonify({'error': 'Falsches Passwort'}), 403
 
 
 @app.route('/admin/logout', methods=['POST'])
 def admin_logout():
+    if session.get('is_admin'):
+        _log_admin_action('logout')
     session.pop('is_admin', None)
     return redirect(url_for('admin_dashboard'))
 
@@ -650,7 +726,7 @@ def admin_logout():
 @limiter.limit("30 per minute")
 def api_stats():
     token = request.args.get('token', '')
-    if not _access_granted(token): abort(403)
+    if not _viewer_access_granted(token): abort(403)
 
     try:
         with get_db() as conn:
@@ -699,7 +775,7 @@ def api_stats():
 @limiter.limit("30 per minute")
 def api_route():
     token = request.args.get('token', '')
-    if not _access_granted(token): abort(403)
+    if not _viewer_access_granted(token): abort(403)
 
     photos = []
     try:
@@ -771,8 +847,7 @@ def _ensure_blur_thumbnail(thumb_path, blur_thumb_path):
         return False
     try:
         with Image.open(thumb_path) as img:
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
+            img = _to_rgb(img)
             img.thumbnail((48, 48))
             img.save(blur_thumb_path, "JPEG", quality=40, optimize=True)
         return True
@@ -791,8 +866,7 @@ def _ensure_large_thumbnail(original_path, large_thumb_path):
     try:
         with Image.open(original_path) as img:
             img = ImageOps.exif_transpose(img)
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
+            img = _to_rgb(img)
             img.thumbnail(LARGE_THUMB_MAX)
             img.save(large_thumb_path, "JPEG", quality=LARGE_THUMB_QUALITY, optimize=True)
         return True
@@ -813,7 +887,7 @@ def _is_within_dir(base_dir, target_path):
 @app.route('/api/thumb/<path:filename>')
 def api_thumb(filename):
     token = request.args.get('token', '')
-    if not (session.get('is_admin') or _access_granted(token)): abort(403)
+    if not _viewer_access_granted(token): abort(403)
 
     base_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
     requested_path = os.path.abspath(os.path.join(base_dir, filename))
@@ -926,6 +1000,8 @@ def upload_photo():
         # wie schon bei fehlenden OSRM-Routen.
         threading.Thread(target=_fetch_and_store_weather, args=(unique_name, lat, lon, final_ts), daemon=True).start()
 
+        _log_admin_action('upload', f"{unique_name} ({loc})")
+
         return jsonify({'success': True, 'file': unique_name, 'location': loc,
                         'missing_gps': False, 'lat': lat, 'lon': lon, 'timestamp': final_ts})
 
@@ -965,6 +1041,7 @@ def update_location():
                          (lat, lon, new_loc, filename))
 
         logger.info(f"Location update for {filename}: {new_loc}")
+        _log_admin_action('update_location', f"{filename} -> {new_loc}")
 
         return jsonify({'success': True, 'location': new_loc})
 
@@ -994,6 +1071,7 @@ def update_note(filename):
     try:
         with get_db() as conn:
             conn.execute("UPDATE photos SET note = ? WHERE filename = ?", (note, filename))
+        _log_admin_action('update_note', filename)
         return jsonify({'success': True, 'note': note})
     except Exception as e:
         logger.error(f"Update note error: {e}")
@@ -1009,6 +1087,7 @@ def update_favorite(filename):
     try:
         with get_db() as conn:
             conn.execute("UPDATE photos SET is_favorite = ? WHERE filename = ?", (int(favorite), filename))
+        _log_admin_action('set_favorite' if favorite else 'unset_favorite', filename)
         return jsonify({'success': True, 'favorite': favorite})
     except Exception as e:
         logger.error(f"Update favorite error: {e}")
@@ -1022,20 +1101,11 @@ ADMIN_PHOTOS_PAGE_SIZE = 60
 @admin_required
 def admin_list_photos():
     q = request.args.get('q', '').strip()
-    try:
-        offset = max(0, int(request.args.get('offset', 0)))
-    except (TypeError, ValueError):
-        offset = 0
+    offset = _parse_offset()
 
     try:
         with get_db() as conn:
-            if q:
-                like = f"%{q}%"
-                where = "WHERE location LIKE ? OR filename LIKE ?"
-                params = (like, like)
-            else:
-                where = ""
-                params = ()
+            where, params = _build_like_filter(q, 'location', 'filename')
 
             rows = conn.execute(
                 f"SELECT filename, lat, lon, timestamp, location, note, is_favorite FROM photos {where} "
@@ -1074,11 +1144,131 @@ def admin_delete_photo(filename):
                 os.remove(path)
 
         logger.info(f"Deleted photo: {filename}")
+        _log_admin_action('delete_photo', filename)
         return jsonify({'success': True})
 
     except Exception as e:
         logger.error(f"Delete photo error: {e}")
         return jsonify({'error': 'Foto konnte nicht geloescht werden.'}), 500
+
+
+ADMIN_ROUTES_PAGE_SIZE = 50
+
+
+@app.route('/api/admin/routes')
+@admin_required
+def admin_list_routes():
+    offset = _parse_offset()
+
+    try:
+        with get_db() as conn:
+            photo_rows = conn.execute(
+                "SELECT filename, lat, lon, location FROM photos "
+                "WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY timestamp ASC"
+            ).fetchall()
+            route_rows = conn.execute("SELECT start_filename, end_filename, mode FROM routes").fetchall()
+    except Exception as e:
+        logger.error(f"Admin route list error: {e}")
+        return jsonify({'error': 'DB Error'}), 500
+
+    route_modes = {(r['start_filename'], r['end_filename']): r['mode'] for r in route_rows}
+
+    segments = []
+    for i in range(1, len(photo_rows)):
+        p1, p2 = photo_rows[i - 1], photo_rows[i]
+        if p1['lat'] == 0 and p1['lon'] == 0:
+            continue
+        segments.append({
+            'start_filename': p1['filename'],
+            'end_filename': p2['filename'],
+            'start_location': p1['location'],
+            'end_location': p2['location'],
+            'distance_km': round(calculate_distance(p1['lat'], p1['lon'], p2['lat'], p2['lon']), 1),
+            'mode': route_modes.get((p1['filename'], p2['filename'])),
+        })
+
+    total = len(segments)
+    page = segments[offset:offset + ADMIN_ROUTES_PAGE_SIZE]
+
+    return jsonify({'segments': page, 'total': total, 'offset': offset, 'limit': ADMIN_ROUTES_PAGE_SIZE})
+
+
+@app.route('/api/admin/routes/mode', methods=['POST'])
+@admin_required
+def admin_set_route_mode():
+    data = request.get_json(silent=True) or {}
+    start_filename = data.get('start_filename')
+    end_filename = data.get('end_filename')
+    mode = data.get('mode')
+
+    if not start_filename or not end_filename or mode not in ('drive', 'flight'):
+        return jsonify({'error': 'Daten fehlen oder ungueltig'}), 400
+
+    try:
+        with get_db() as conn:
+            p1 = conn.execute("SELECT lat, lon FROM photos WHERE filename = ?", (start_filename,)).fetchone()
+            p2 = conn.execute("SELECT lat, lon FROM photos WHERE filename = ?", (end_filename,)).fetchone()
+    except Exception as e:
+        logger.error(f"Route mode lookup error: {e}")
+        return jsonify({'error': 'DB Error'}), 500
+
+    if not p1 or not p2 or p1['lat'] is None or p2['lat'] is None:
+        return jsonify({'error': 'Fotos ohne GPS-Position'}), 400
+
+    lat1, lon1, lat2, lon2 = p1['lat'], p1['lon'], p2['lat'], p2['lon']
+
+    if mode == 'flight':
+        geometry = straight_line_geometry(lat1, lon1, lat2, lon2)
+    else:
+        geometry = fetch_osrm_route(lat1, lon1, lat2, lon2, bypass_distance_cap=True) \
+            or straight_line_geometry(lat1, lon1, lat2, lon2)
+
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO routes (start_filename, end_filename, geometry, mode) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(start_filename, end_filename) DO UPDATE SET geometry = excluded.geometry, mode = excluded.mode",
+                (start_filename, end_filename, json.dumps(geometry), mode)
+            )
+    except Exception as e:
+        logger.error(f"Route mode update error: {e}")
+        return jsonify({'error': 'Route konnte nicht gespeichert werden.'}), 500
+
+    _log_admin_action('set_route_mode', f"{start_filename} -> {end_filename}: {mode}")
+
+    return jsonify({'success': True, 'mode': mode})
+
+
+ADMIN_LOG_PAGE_SIZE = 50
+
+
+@app.route('/api/admin/log')
+@admin_required
+def admin_list_log():
+    q = request.args.get('q', '').strip()
+    offset = _parse_offset()
+
+    try:
+        with get_db() as conn:
+            where, params = _build_like_filter(q, 'action', 'detail')
+
+            rows = conn.execute(
+                f"SELECT id, timestamp, action, detail FROM admin_log {where} "
+                f"ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?",
+                (*params, ADMIN_LOG_PAGE_SIZE, offset)
+            ).fetchall()
+            total = conn.execute(f"SELECT COUNT(*) as cnt FROM admin_log {where}", params).fetchone()['cnt']
+    except Exception as e:
+        logger.error(f"Admin log list error: {e}")
+        return jsonify({'error': 'DB Error'}), 500
+
+    entries = []
+    for r in rows:
+        entry = dict(r)
+        entry['datetime_str'] = datetime.fromtimestamp(entry['timestamp']).strftime('%d.%m.%Y %H:%M:%S')
+        entries.append(entry)
+
+    return jsonify({'entries': entries, 'total': total, 'offset': offset, 'limit': ADMIN_LOG_PAGE_SIZE})
 
 
 VISITOR_HISTORY_DAYS = 30
@@ -1123,6 +1313,7 @@ def start_background_services():
     os.makedirs(abs_photo_dir, exist_ok=True)
 
     threading.Thread(target=initial_scan, args=(abs_photo_dir,), daemon=True).start()
+    threading.Thread(target=start_weather_backfill_if_needed, daemon=True).start()
 
     event_handler = PhotoEventHandler(abs_photo_dir)
     observer = Observer()

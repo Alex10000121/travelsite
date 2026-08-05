@@ -89,22 +89,17 @@
             <h3 id="stats-title">Reise Zusammenfassung</h3>
 
             <div class="stats-grid">
+                {% for stat_id, stat_label in [
+                    ('stat-km', 'Kilometer'),
+                    ('stat-countries', 'Länder'),
+                    ('stat-days', 'Tage unterwegs'),
+                    ('stat-photos', 'Fotos'),
+                ] %}
                 <div class="stat-box">
-                    <span class="stat-value" id="stat-km">0</span>
-                    <span class="stat-label">Kilometer</span>
+                    <span class="stat-value" id="{{ stat_id }}">0</span>
+                    <span class="stat-label">{{ stat_label }}</span>
                 </div>
-                <div class="stat-box">
-                    <span class="stat-value" id="stat-countries">0</span>
-                    <span class="stat-label">Länder</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-value" id="stat-days">0</span>
-                    <span class="stat-label">Tage unterwegs</span>
-                </div>
-                <div class="stat-box">
-                    <span class="stat-value" id="stat-photos">0</span>
-                    <span class="stat-label">Fotos</span>
-                </div>
+                {% endfor %}
             </div>
 
             <ul id="country-list" class="country-list" aria-label="Liste der besuchten Länder"></ul>

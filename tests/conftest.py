@@ -8,7 +8,7 @@ os.environ.setdefault('ADMIN_TOKEN', 'test_admin')
 os.environ.setdefault('ACCESS_TOKEN', 'test_token')
 
 import app as flask_module
-from app import app as flask_app, init_db
+from app import app as flask_app, init_db, limiter
 
 
 @pytest.fixture
@@ -23,6 +23,11 @@ def app(tmp_path, monkeypatch):
     os.makedirs(flask_module.CONFIG['THUMB_DIR'], exist_ok=True)
 
     init_db()
+
+    # Der Limiter ist ein Modul-Singleton, sein Storage ("memory://") ueberlebt sonst
+    # ueber Testgrenzen hinweg - ohne Reset wuerden sich z.B. wiederholte
+    # /admin/login-Tests gegenseitig den 5-pro-Minute-Rate-Limit aufbrauchen.
+    limiter.reset()
 
     flask_app.config['TESTING'] = True
     yield flask_app

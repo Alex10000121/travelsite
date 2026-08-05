@@ -151,6 +151,13 @@ export async function setFavorite(filename, favorite) {
     }
 }
 
+function buildPaginationParams({ q = '', offset = 0 } = {}) {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (offset) params.set('offset', String(offset));
+    return params;
+}
+
 /**
  * Lädt eine Seite Fotos für die Admin-Verwaltungsansicht (inkl. Ort/Datum),
  * optional gefiltert nach Ort/Dateiname. Serverseitig paginiert, damit bei
@@ -161,9 +168,7 @@ export async function setFavorite(filename, favorite) {
  * @returns {Promise<{photos: Array, total: number, offset: number, limit: number}>}
  */
 export async function fetchAdminPhotos({ q = '', offset = 0 } = {}) {
-    const params = new URLSearchParams();
-    if (q) params.set('q', q);
-    if (offset) params.set('offset', String(offset));
+    const params = buildPaginationParams({ q, offset });
 
     let res;
     try {
@@ -197,6 +202,54 @@ export async function deletePhoto(filename) {
 }
 
 /**
+ * Lädt eine Seite der Streckenabschnitte zwischen aufeinanderfolgenden Fotos für die
+ * Admin-Routenverwaltung, serverseitig paginiert.
+ * @param {object} [opts]
+ * @param {number} [opts.offset]
+ * @returns {Promise<{segments: Array, total: number, offset: number, limit: number}>}
+ */
+export async function fetchAdminRoutes({ offset = 0 } = {}) {
+    const params = buildPaginationParams({ offset });
+
+    let res;
+    try {
+        res = await fetch(`/api/admin/routes?${params.toString()}`);
+    } catch (err) {
+        throw new Error('Verbindungsfehler beim Laden der Routen.');
+    }
+
+    if (!res.ok) {
+        throw new Error(`Routen konnten nicht geladen werden (HTTP ${res.status}).`);
+    }
+    return res.json();
+}
+
+/**
+ * Überschreibt den automatisch erkannten Modus (Fahrt/Flug) eines Streckenabschnitts.
+ * @param {string} startFilename
+ * @param {string} endFilename
+ * @param {'drive'|'flight'} mode
+ * @returns {Promise<void>}
+ */
+export async function setRouteMode(startFilename, endFilename, mode) {
+    let res;
+    try {
+        res = await fetch('/api/admin/routes/mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ start_filename: startFilename, end_filename: endFilename, mode })
+        });
+    } catch (err) {
+        throw new Error(`Netzwerkfehler beim Speichern des Modus: ${err.message}`);
+    }
+
+    if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `Modus konnte nicht gespeichert werden (HTTP ${res.status}).`);
+    }
+}
+
+/**
  * Lädt Besucherzahlen für das Admin-Dashboard: Gesamt, aktuell aktive Sessions
  * und den Tagesverlauf der letzten 30 Tage.
  * @returns {Promise<{total: number, active_now: number, daily: Array<{date: string, count: number}>}>}
@@ -211,6 +264,30 @@ export async function fetchVisitorStats() {
 
     if (!res.ok) {
         throw new Error(`Besucherzahlen konnten nicht geladen werden (HTTP ${res.status}).`);
+    }
+    return res.json();
+}
+
+/**
+ * Lädt eine Seite des Admin-Aktionsprotokolls (Login/Logout, Uploads, Änderungen, Löschungen),
+ * optional gefiltert nach Aktion/Detail, serverseitig paginiert.
+ * @param {object} [opts]
+ * @param {string} [opts.q] - Suchbegriff (Aktion oder Detail)
+ * @param {number} [opts.offset]
+ * @returns {Promise<{entries: Array, total: number, offset: number, limit: number}>}
+ */
+export async function fetchAdminLog({ q = '', offset = 0 } = {}) {
+    const params = buildPaginationParams({ q, offset });
+
+    let res;
+    try {
+        res = await fetch(`/api/admin/log?${params.toString()}`);
+    } catch (err) {
+        throw new Error('Verbindungsfehler beim Laden des Protokolls.');
+    }
+
+    if (!res.ok) {
+        throw new Error(`Protokoll konnte nicht geladen werden (HTTP ${res.status}).`);
     }
     return res.json();
 }

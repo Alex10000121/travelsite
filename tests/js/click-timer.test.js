@@ -4,11 +4,16 @@ import { createClickDispatcher } from '../../static/click-timer.js';
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
+function createDispatcher(options = {}) {
+    const onSingleClick = vi.fn();
+    const onDoubleClick = vi.fn();
+    const handleClick = createClickDispatcher({ onSingleClick, onDoubleClick, ...options });
+    return { onSingleClick, onDoubleClick, handleClick };
+}
+
 describe('createClickDispatcher', () => {
     it('ruft onSingleClick nach Ablauf der Verzögerung auf, wenn nur einmal geklickt wird', () => {
-        const onSingleClick = vi.fn();
-        const onDoubleClick = vi.fn();
-        const handleClick = createClickDispatcher({ onSingleClick, onDoubleClick, delay: 300 });
+        const { onSingleClick, onDoubleClick, handleClick } = createDispatcher({ delay: 300 });
 
         handleClick();
         expect(onSingleClick).not.toHaveBeenCalled();
@@ -19,9 +24,7 @@ describe('createClickDispatcher', () => {
     });
 
     it('ruft bei zwei Klicks innerhalb der Verzögerung sofort onDoubleClick auf und unterdrückt onSingleClick', () => {
-        const onSingleClick = vi.fn();
-        const onDoubleClick = vi.fn();
-        const handleClick = createClickDispatcher({ onSingleClick, onDoubleClick, delay: 300 });
+        const { onSingleClick, onDoubleClick, handleClick } = createDispatcher({ delay: 300 });
 
         handleClick();
         vi.advanceTimersByTime(100);
@@ -34,9 +37,7 @@ describe('createClickDispatcher', () => {
     });
 
     it('behandelt einen zweiten Klick nach Ablauf der Verzögerung wieder als neuen Einzelklick', () => {
-        const onSingleClick = vi.fn();
-        const onDoubleClick = vi.fn();
-        const handleClick = createClickDispatcher({ onSingleClick, onDoubleClick, delay: 300 });
+        const { onSingleClick, onDoubleClick, handleClick } = createDispatcher({ delay: 300 });
 
         handleClick();
         vi.advanceTimersByTime(300);
@@ -48,13 +49,11 @@ describe('createClickDispatcher', () => {
     });
 
     it('erlaubt nach einem Doppelklick wieder einen neuen Einzelklick', () => {
-        const onSingleClick = vi.fn();
-        const onDoubleClick = vi.fn();
-        const handleClick = createClickDispatcher({ onSingleClick, onDoubleClick, delay: 300 });
+        const { onSingleClick, onDoubleClick, handleClick } = createDispatcher({ delay: 300 });
 
         handleClick();
-        handleClick(); // löst den Doppelklick aus
-        handleClick(); // startet einen neuen Einzelklick-Timer
+        handleClick();
+        handleClick();
         vi.advanceTimersByTime(300);
 
         expect(onDoubleClick).toHaveBeenCalledTimes(1);
@@ -62,8 +61,7 @@ describe('createClickDispatcher', () => {
     });
 
     it('nutzt 300ms als Standardverzögerung', () => {
-        const onSingleClick = vi.fn();
-        const handleClick = createClickDispatcher({ onSingleClick });
+        const { onSingleClick, handleClick } = createDispatcher();
 
         handleClick();
         vi.advanceTimersByTime(299);

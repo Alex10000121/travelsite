@@ -4,9 +4,11 @@ import piexif
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from PIL import Image
+import app as flask_module
 from app import (
     calculate_distance, get_decimal_from_dms, decimal_to_dms_rational,
     extract_exif_data, get_location_name, fetch_weather,
+    _thumb_path, get_db, index_photo,
 )
 
 
@@ -173,14 +175,12 @@ class TestGetLocationName:
         assert result != "Unbekannt" or result == "Unbekannt"
 
     def test_zero_lat_is_not_treated_as_missing(self):
-        from unittest.mock import patch
         with patch('app.rg.search', return_value=[{'name': 'Accra', 'cc': 'GH'}]) as mock_search:
             result = get_location_name(0.0, 0.0)
             mock_search.assert_called_once()
             assert result == "Accra, GH"
 
     def test_zero_lon_is_not_treated_as_missing(self):
-        from unittest.mock import patch
         with patch('app.rg.search', return_value=[{'name': 'London', 'cc': 'GB'}]) as mock_search:
             result = get_location_name(51.5, 0.0)
             mock_search.assert_called_once()
@@ -216,32 +216,25 @@ class TestFetchWeather:
 
 class TestThumbPath:
     def test_flat_filename_unchanged(self, app):
-        from app import _thumb_path
-        import app as flask_module
-        import os
         result = _thumb_path('trip_photo.jpg')
         assert result == os.path.join(flask_module.CONFIG['THUMB_DIR'], 'trip_photo.jpg')
 
     def test_subdir_and_flat_name_do_not_collide(self, app):
-        from app import _thumb_path
         nested = _thumb_path('a/b.jpg')
         flat = _thumb_path('a_b.jpg')
         assert nested != flat
 
     def test_same_subdir_path_is_stable(self, app):
-        from app import _thumb_path
         assert _thumb_path('a/b.jpg') == _thumb_path('a/b.jpg')
 
 
 class TestDatabase:
     def test_wal_journal_mode_is_enabled(self, app):
-        from app import get_db
         with get_db() as conn:
             row = conn.execute("PRAGMA journal_mode").fetchone()
         assert row[0] == 'wal'
 
     def test_connection_has_row_factory(self, app):
-        from app import get_db
         import sqlite3
         with get_db() as conn:
             assert conn.row_factory == sqlite3.Row
@@ -252,8 +245,6 @@ class TestIndexPhoto:
         Image.new('RGB', (100, 100)).save(str(path), format='JPEG')
 
     def test_photo_without_gps_is_moved_to_no_gps_dir(self, app):
-        import app as flask_module
-        from app import index_photo
         abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
         img_path = os.path.join(abs_photo_dir, 'plain_photo.jpg')
         self._make_plain_jpeg(Path(img_path))
@@ -264,8 +255,6 @@ class TestIndexPhoto:
         assert os.path.exists(os.path.join(abs_photo_dir, 'no_gps', 'plain_photo.jpg'))
 
     def test_photo_without_gps_is_not_inserted_into_db(self, app):
-        import app as flask_module
-        from app import index_photo, get_db
         abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
         img_path = os.path.join(abs_photo_dir, 'db_check.jpg')
         self._make_plain_jpeg(Path(img_path))
@@ -277,8 +266,6 @@ class TestIndexPhoto:
         assert row is None
 
     def test_unsupported_extension_is_ignored(self, app):
-        import app as flask_module
-        from app import index_photo
         abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
         txt_path = os.path.join(abs_photo_dir, 'notes.txt')
         Path(txt_path).write_text('not an image')
@@ -288,8 +275,6 @@ class TestIndexPhoto:
         assert os.path.exists(txt_path)
 
     def test_no_gps_subdir_is_skipped(self, app):
-        import app as flask_module
-        from app import index_photo, get_db
         abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
         no_gps_dir = os.path.join(abs_photo_dir, 'no_gps')
         os.makedirs(no_gps_dir, exist_ok=True)
@@ -306,8 +291,6 @@ class TestIndexPhoto:
     def test_hidden_staging_file_is_skipped(self, app):
         """Upload-Staging-Dateien (Praefix '.') duerfen vom Watchdog-Scanner nicht
         parallel zum Upload-Handler eingelesen werden (Race-Condition-Schutz)."""
-        import app as flask_module
-        from app import index_photo, get_db
         abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
         img_path = os.path.join(abs_photo_dir, '.upload_staging.jpg')
         self._make_plain_jpeg(Path(img_path))
@@ -320,8 +303,6 @@ class TestIndexPhoto:
         assert row[0] == 0
 
     def test_eadir_path_is_skipped(self, app):
-        import app as flask_module
-        from app import index_photo, get_db
         abs_photo_dir = flask_module.CONFIG['PHOTO_DIR']
         ea_path = os.path.join(abs_photo_dir, '@eaDir', 'thumb.jpg')
         os.makedirs(os.path.dirname(ea_path), exist_ok=True)
