@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.13-slim
 
 ARG UID=1000
 ARG GID=1000
@@ -12,10 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir gunicorn && \
-    pip uninstall -y pip setuptools wheel
+RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir gunicorn
 
 # ADMIN_TOKEN und SECRET_KEY sind bewusst NICHT vorbelegt - app.py bricht ohne sie
 # ab. Muessen beim "docker run" per -e gesetzt werden, siehe README. ACCESS_TOKEN
