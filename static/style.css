@@ -2,6 +2,10 @@
    1. VARIABLES & SETUP
    ========================================= */
 :root {
+    /* Ohne dieses Hinweis rendert der Browser native Formularelemente (z.B. die
+       Optionsliste von <select>) mit hellem Standard-Hintergrund, obwohl die Seite
+       durchgehend dunkel gestylt ist - Text darin ist dann bis zum Hover unsichtbar. */
+    color-scheme: dark;
     --bg-color: #1a1a1a;
     --panel-color: #252525;
     --accent-color: #3b82f6;
@@ -421,6 +425,28 @@ body.admin-page { overflow-y: auto; }
 .admin-search-input { width: 100%; padding: 10px 14px; margin-bottom: 14px; border-radius: 30px; border: 1px solid var(--overlay-medium); background: var(--overlay-faint); color: var(--text-main); font-size: 0.9rem; }
 .admin-search-input::placeholder { color: var(--text-muted); }
 .admin-search-input:focus { outline: none; border-color: var(--accent-color); }
+/* Der globale color-scheme-Hint auf :root reicht in manchen Browsern nicht fuer die
+   native Options-Popup von <select> - direkt am Element + explizite option-Farben
+   erzwingen einen dunklen Hintergrund mit lesbarem Text zuverlaessig. Der native
+   Pfeil wird durch appearance:none + einen selbstgebauten Pfeil ersetzt, damit das
+   Element wie die uebrigen Pill-Inputs der Seite aussieht statt wie ein Browser-Default. */
+select.admin-search-input {
+    color-scheme: dark;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    padding-right: 36px;
+    background-image:
+        linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+        linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+    background-position: calc(100% - 21px) center, calc(100% - 16px) center;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+}
+select.admin-search-input option { background: var(--panel-color); color: var(--text-main); border-radius: 8px; }
+/* Neue, noch nicht ueberall unterstuetzte API zum Stylen der nativen Options-Popup selbst
+   (nicht nur der geschlossenen Box) - in Browsern ohne Unterstuetzung folgenlos ignoriert. */
+select.admin-search-input::picker(select) { border-radius: 14px; overflow: hidden; border: 1px solid var(--overlay-medium); }
 
 .admin-photo-list, .admin-route-list { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .admin-photo-item, .admin-route-item { padding: 10px; border-radius: 12px; background: var(--overlay-faint); }
@@ -484,6 +510,26 @@ body.admin-page { overflow-y: auto; }
 .admin-log-action { font-weight: 600; flex: 0 0 auto; }
 .admin-log-detail { flex: 1 1 160px; min-width: 0; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .admin-log-time { flex: 0 0 auto; margin-left: auto; color: var(--text-muted); font-size: 0.75rem; white-space: nowrap; }
+
+.admin-reel-create-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.admin-reel-create-row select { flex: 1 1 220px; margin-bottom: 0; }
+.admin-reel-create-row .action-btn { width: auto; margin-top: 0; padding: 10px 20px; flex: 0 0 auto; }
+.admin-reel-duration-input { width: 80px; flex: 0 0 auto; margin-bottom: 0; text-align: center; }
+.admin-reel-duration-unit { margin: 0; flex: 0 0 auto; }
+.admin-reel-list { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.admin-reel-status { flex: 0 0 auto; padding: 3px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; color: white; background: var(--overlay-strong); }
+.admin-reel-status.status-done { background: #15803d; }
+.admin-reel-status.status-error { background: #7f1d1d; }
+.admin-reel-status.status-pending, .admin-reel-status.status-running { background: var(--accent-color); }
+.admin-reel-actions { display: flex; gap: 6px; flex: 0 0 auto; margin-left: auto; }
+.admin-reel-download-btn {
+    border: none; border-radius: 8px;
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.95rem; line-height: 1; cursor: pointer; color: white;
+    flex: 0 0 auto; background: var(--accent-color); text-decoration: none;
+}
+.admin-reel-download-btn:hover { background: var(--accent-hover); }
 
 #admin-fix-modal .modal-content { max-width: 600px; }
 #admin-fix-map { width: 100%; height: 320px; border-radius: 14px; overflow: hidden; margin: 18px 0; }

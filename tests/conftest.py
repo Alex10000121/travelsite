@@ -16,11 +16,13 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setitem(flask_module.CONFIG, 'DB_PATH', str(tmp_path / 'test.db'))
     monkeypatch.setitem(flask_module.CONFIG, 'PHOTO_DIR', str(tmp_path / 'photos'))
     monkeypatch.setitem(flask_module.CONFIG, 'THUMB_DIR', str(tmp_path / 'thumbs'))
+    monkeypatch.setitem(flask_module.CONFIG, 'REEL_DIR', str(tmp_path / 'reels'))
     monkeypatch.setitem(flask_module.CONFIG, 'ACCESS_TOKEN', 'test_token')
     monkeypatch.setitem(flask_module.CONFIG, 'ADMIN_TOKEN', 'test_admin')
 
     os.makedirs(flask_module.CONFIG['PHOTO_DIR'], exist_ok=True)
     os.makedirs(flask_module.CONFIG['THUMB_DIR'], exist_ok=True)
+    os.makedirs(flask_module.CONFIG['REEL_DIR'], exist_ok=True)
 
     init_db()
 
@@ -31,6 +33,16 @@ def app(tmp_path, monkeypatch):
 
     flask_app.config['TESTING'] = True
     yield flask_app
+
+
+@pytest.fixture(autouse=True)
+def _reset_reel_lock():
+    # Wie der Limiter oben ist auch der Reel-Generation-Lock ein Modul-Singleton -
+    # ein Test, der ihn (z.B. bei einem Fehlschlag) haelt, wuerde sonst allen
+    # nachfolgenden Reel-Tests einen 409 bescheren.
+    yield
+    if flask_module._reel_generation_lock.locked():
+        flask_module._reel_generation_lock.release()
 
 
 @pytest.fixture

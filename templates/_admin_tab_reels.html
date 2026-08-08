@@ -1,0 +1,17 @@
+<section class="admin-card" id="card-reels">
+    <h2>Trip Reel</h2>
+
+    <div class="admin-reel-create-row">
+        <select id="admin-reel-group" class="admin-search-input" aria-label="Land auswählen"></select>
+        <input type="number" id="admin-reel-duration" class="admin-search-input admin-reel-duration-input"
+               min="5" max="120" step="5" value="30" aria-label="Ziel-Dauer in Sekunden">
+        <span class="admin-hint admin-reel-duration-unit">Sek.</span>
+        <button type="button" id="admin-reel-create" class="action-btn">Reel erstellen</button>
+    </div>
+
+    <ul id="admin-reel-list" class="admin-reel-list" aria-label="Erstellte Reels"></ul>
+
+    <button type="button" id="admin-reel-load-more" class="admin-load-more-btn" style="display:none;">
+        Weitere laden
+    </button>
+</section>

@@ -20,11 +20,41 @@ def _upload_photo(client, filename, lat='48.0', lon='11.0', color=0):
     }, content_type='multipart/form-data')
 
 
-def _insert_photo(conn, filename, lat=48.0, lon=11.0, timestamp=1700000000.0, location='X'):
+def _insert_photo(conn, filename, lat=48.0, lon=11.0, timestamp=1700000000.0, location='X', media_type='photo'):
     conn.execute(
-        "INSERT INTO photos (filename, lat, lon, timestamp, location) VALUES (?, ?, ?, ?, ?)",
-        (filename, lat, lon, timestamp, location)
+        "INSERT INTO photos (filename, lat, lon, timestamp, location, media_type) VALUES (?, ?, ?, ?, ?, ?)",
+        (filename, lat, lon, timestamp, location, media_type)
     )
+
+
+def _insert_reel(conn, group_key='DE', status='done', filename=None, photo_count=None,
+                  video_count=None, duration_seconds=None, created_at=1700000000.0):
+    cursor = conn.execute(
+        "INSERT INTO reels (group_key, status, filename, photo_count, video_count, duration_seconds, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (group_key, status, filename, photo_count, video_count, duration_seconds, created_at)
+    )
+    return cursor.lastrowid
+
+
+class _SyncThread:
+    """Ersetzt threading.Thread in Tests: fuehrt den Zieljob synchron im aufrufenden
+    Thread aus, damit /api/admin/reels-Tests nicht gegen einen echten Hintergrund-Thread
+    race-n muessen."""
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+        self._target = target
+        self._args = args or ()
+        self._kwargs = kwargs or {}
+
+    def start(self):
+        self._target(*self._args, **self._kwargs)
+
+
+class _FakeThreadingModule:
+    """Patch-Ziel fuer 'app.threading': ersetzt nur den Namen, den app.py fuer
+    threading.Thread(...) verwendet - im Gegensatz zu patch('app.threading.Thread', ...)
+    bleibt so das echte threading-Modul (u.a. von flask-limiter genutzt) unberuehrt."""
+    Thread = _SyncThread
 
 
 class TestIndexRoute:
@@ -1156,3 +1186,243 @@ class TestAdminLog:
         assert data['total'] == 3
         assert data['offset'] == 1
         assert len(data['entries']) == 2
+
+
+class TestReelGroups:
+    def test_without_admin_session_returns_403(self, client):
+        response = client.get('/api/admin/reels/groups')
+        assert response.status_code == 403
+
+    def test_groups_photos_and_videos_by_country(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            _insert_photo(conn, 'p1.jpg', location='München, DE')
+            _insert_photo(conn, 'p2.jpg', location='Berlin, DE')
+            _insert_photo(conn, 'v1.mp4', location='München, DE', media_type='video')
+            _insert_photo(conn, 'p3.jpg', location='Paris, FR')
+
+        response = admin_client.get('/api/admin/reels/groups')
+        assert response.status_code == 200
+        groups = {g['group_key']: g for g in response.get_json()['groups']}
+        assert groups['DE']['photo_count'] == 2
+        assert groups['DE']['video_count'] == 1
+        assert groups['FR']['photo_count'] == 1
+        assert groups['FR']['video_count'] == 0
+
+    def test_empty_when_no_photos(self, admin_client):
+        response = admin_client.get('/api/admin/reels/groups')
+        assert response.status_code == 200
+        assert response.get_json()['groups'] == []
+
+
+class TestCreateReel:
+    def test_without_admin_session_returns_403(self, client):
+        response = client.post('/api/admin/reels', json={'group_key': 'DE'})
+        assert response.status_code == 403
+
+    def test_missing_group_key_returns_400(self, admin_client):
+        response = admin_client.post('/api/admin/reels', json={})
+        assert response.status_code == 400
+
+    def test_unknown_group_key_returns_400(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            _insert_photo(conn, 'p1.jpg', location='München, DE')
+
+        response = admin_client.post('/api/admin/reels', json={'group_key': 'FR'})
+        assert response.status_code == 400
+
+    def test_valid_group_key_starts_job_and_returns_reel_id(self, admin_client, app):
+        import app as flask_module
+        from app import get_db
+
+        with get_db() as conn:
+            _insert_photo(conn, 'p1.jpg', location='München, DE')
+
+        fake_generate_reel = MagicMock(side_effect=lambda *a, **k: flask_module._reel_generation_lock.release())
+        with patch('app.threading', _FakeThreadingModule()), patch('app._generate_reel', fake_generate_reel):
+            response = admin_client.post('/api/admin/reels', json={'group_key': 'DE'})
+
+        assert response.status_code == 202
+        data = response.get_json()
+        assert data['success'] is True
+        fake_generate_reel.assert_called_once_with(data['reel_id'], 'DE', float(flask_module.DEFAULT_REEL_DURATION_SECONDS))
+
+        with get_db() as conn:
+            row = conn.execute("SELECT group_key FROM reels WHERE id=?", (data['reel_id'],)).fetchone()
+        assert row['group_key'] == 'DE'
+
+    def test_custom_duration_is_passed_through(self, admin_client, app):
+        import app as flask_module
+        from app import get_db
+
+        with get_db() as conn:
+            _insert_photo(conn, 'p1.jpg', location='München, DE')
+
+        fake_generate_reel = MagicMock(side_effect=lambda *a, **k: flask_module._reel_generation_lock.release())
+        with patch('app.threading', _FakeThreadingModule()), patch('app._generate_reel', fake_generate_reel):
+            response = admin_client.post('/api/admin/reels', json={'group_key': 'DE', 'duration_seconds': 60})
+
+        assert response.status_code == 202
+        fake_generate_reel.assert_called_once_with(response.get_json()['reel_id'], 'DE', 60.0)
+
+    def test_duration_below_minimum_returns_400(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            _insert_photo(conn, 'p1.jpg', location='München, DE')
+
+        response = admin_client.post('/api/admin/reels', json={'group_key': 'DE', 'duration_seconds': 1})
+        assert response.status_code == 400
+
+    def test_duration_above_maximum_returns_400(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            _insert_photo(conn, 'p1.jpg', location='München, DE')
+
+        response = admin_client.post('/api/admin/reels', json={'group_key': 'DE', 'duration_seconds': 9999})
+        assert response.status_code == 400
+
+    def test_non_numeric_duration_returns_400(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            _insert_photo(conn, 'p1.jpg', location='München, DE')
+
+        response = admin_client.post('/api/admin/reels', json={'group_key': 'DE', 'duration_seconds': 'lots'})
+        assert response.status_code == 400
+
+    def test_second_trigger_while_running_returns_409(self, admin_client, app):
+        import app as flask_module
+        from app import get_db
+
+        with get_db() as conn:
+            _insert_photo(conn, 'p1.jpg', location='München, DE')
+
+        flask_module._reel_generation_lock.acquire()
+        response = admin_client.post('/api/admin/reels', json={'group_key': 'DE'})
+        assert response.status_code == 409
+
+
+class TestAdminReelList:
+    def test_without_admin_session_returns_403(self, client):
+        response = client.get('/api/admin/reels')
+        assert response.status_code == 403
+
+    def test_returns_reels_most_recent_first(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            _insert_reel(conn, group_key='DE', created_at=1700000000.0)
+            _insert_reel(conn, group_key='FR', created_at=1700000100.0)
+
+        response = admin_client.get('/api/admin/reels')
+        data = response.get_json()
+        assert data['total'] == 2
+        assert [r['group_key'] for r in data['reels']] == ['FR', 'DE']
+
+    def test_pagination_respects_offset(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            for i in range(3):
+                _insert_reel(conn, group_key=f'G{i}', created_at=1700000000.0 + i)
+
+        response = admin_client.get('/api/admin/reels?offset=1')
+        data = response.get_json()
+        assert data['total'] == 3
+        assert data['offset'] == 1
+        assert len(data['reels']) == 2
+
+
+class TestAdminGetReel:
+    def test_without_admin_session_returns_403(self, client):
+        response = client.get('/api/admin/reels/1')
+        assert response.status_code == 403
+
+    def test_returns_404_for_unknown_id(self, admin_client):
+        response = admin_client.get('/api/admin/reels/999')
+        assert response.status_code == 404
+
+    def test_returns_reel_fields(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            reel_id = _insert_reel(conn, group_key='DE', status='running')
+
+        response = admin_client.get(f'/api/admin/reels/{reel_id}')
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data['group_key'] == 'DE'
+        assert data['status'] == 'running'
+
+
+class TestAdminDownloadReel:
+    def test_without_admin_session_returns_403(self, client):
+        response = client.get('/api/admin/reels/1/file')
+        assert response.status_code == 403
+
+    def test_returns_404_when_not_done(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            reel_id = _insert_reel(conn, status='running', filename=None)
+
+        response = admin_client.get(f'/api/admin/reels/{reel_id}/file')
+        assert response.status_code == 404
+
+    def test_returns_404_when_file_missing_on_disk(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            reel_id = _insert_reel(conn, status='done', filename='ghost.mp4')
+
+        response = admin_client.get(f'/api/admin/reels/{reel_id}/file')
+        assert response.status_code == 404
+
+    def test_downloads_file_as_attachment(self, admin_client, app):
+        import app as flask_module
+        from app import get_db
+
+        reel_path = os.path.join(flask_module.CONFIG['REEL_DIR'], 'DE_123.mp4')
+        with open(reel_path, 'wb') as f:
+            f.write(b'fake mp4 bytes')
+
+        with get_db() as conn:
+            reel_id = _insert_reel(conn, status='done', filename='DE_123.mp4')
+
+        response = admin_client.get(f'/api/admin/reels/{reel_id}/file')
+        assert response.status_code == 200
+        assert response.data == b'fake mp4 bytes'
+        assert 'attachment' in response.headers.get('Content-Disposition', '')
+
+
+class TestAdminDeleteReel:
+    def test_without_admin_session_returns_403(self, client):
+        response = client.delete('/api/admin/reels/1')
+        assert response.status_code == 403
+
+    def test_returns_404_for_unknown_id(self, admin_client):
+        response = admin_client.delete('/api/admin/reels/999')
+        assert response.status_code == 404
+
+    def test_deletes_row_and_file(self, admin_client, app):
+        import app as flask_module
+        from app import get_db
+
+        reel_path = os.path.join(flask_module.CONFIG['REEL_DIR'], 'DE_456.mp4')
+        with open(reel_path, 'wb') as f:
+            f.write(b'fake mp4 bytes')
+
+        with get_db() as conn:
+            reel_id = _insert_reel(conn, status='done', filename='DE_456.mp4')
+
+        response = admin_client.delete(f'/api/admin/reels/{reel_id}')
+        assert response.status_code == 200
+        assert response.get_json()['success'] is True
+        assert not os.path.exists(reel_path)
+
+        with get_db() as conn:
+            row = conn.execute("SELECT 1 FROM reels WHERE id=?", (reel_id,)).fetchone()
+        assert row is None
+
+    def test_deleting_reel_without_file_still_succeeds(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            reel_id = _insert_reel(conn, status='error', filename=None)
+
+        response = admin_client.delete(f'/api/admin/reels/{reel_id}')
+        assert response.status_code == 200

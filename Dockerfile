@@ -5,9 +5,15 @@ ARG GID=1000
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# apt-get upgrade patcht auch bereits im Base-Image vorhandene Pakete (z.B. linux-libc-dev) -
+# ohne das wuerde der Trivy-Scan in der CI (.github/workflows/deploy.yml) bei jeder bekannten,
+# im Debian-Repo bereits gefixten CVE eines Base-Image-Pakets fehlschlagen, auch wenn wir das
+# Paket selbst nie explizit installieren.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libjpeg-dev \
     zlib1g-dev \
+    ffmpeg \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -19,6 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir
 # ebenso, ausser PUBLIC_MODE=1 wird gesetzt (dann entfaellt es).
 ENV PHOTO_DIR=/photos \
     THUMB_DIR=/data/thumbs \
+    REEL_DIR=/data/reels \
     DB_PATH=/data/trips.db \
     CONTACT_EMAIL=deine.email@beispiel.de \
     PYTHONUNBUFFERED=1
@@ -30,8 +37,8 @@ COPY app.py .
 RUN groupadd -g ${GID} appuser && \
     useradd -u ${UID} -g appuser -s /bin/sh -M appuser
 
-RUN mkdir -p /photos /data/thumbs && \
-    chown -R appuser:appuser /app /photos /data/thumbs
+RUN mkdir -p /photos /data/thumbs /data/reels && \
+    chown -R appuser:appuser /app /photos /data/thumbs /data/reels
 
 EXPOSE 5000
 

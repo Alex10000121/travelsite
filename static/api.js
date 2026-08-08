@@ -255,3 +255,91 @@ export async function fetchAdminLog({ q = '', offset = 0 } = {}) {
     }
     return res.json();
 }
+
+/**
+ * Lädt die verfügbaren Trip-Reel-Gruppen (Länder) mit Foto-/Videoanzahl.
+ * @returns {Promise<{groups: Array<{group_key: string, photo_count: number, video_count: number}>}>}
+ */
+export async function fetchReelGroups() {
+    const res = await safeFetch('/api/admin/reels/groups', undefined, 'Verbindungsfehler beim Laden der Reel-Gruppen.');
+    if (!res.ok) {
+        throw new Error(`Reel-Gruppen konnten nicht geladen werden (HTTP ${res.status}).`);
+    }
+    return res.json();
+}
+
+/**
+ * Startet die Erstellung eines Trip Reels für eine Gruppe (Land) im Hintergrund -
+ * der Fortschritt wird über fetchReelStatus()/fetchAdminReels() abgefragt. Die Ziel-Dauer
+ * bestimmt serverseitig nur die Segmentanzahl (zufällig ausgewählt, chronologisch sortiert) -
+ * die tatsächliche Dauer des fertigen Reels kann leicht abweichen.
+ * @param {string} groupKey
+ * @param {number} durationSeconds - Gewünschte Ziel-Dauer des Reels in Sekunden
+ * @returns {Promise<{success: boolean, reel_id: number}>}
+ */
+export async function createReel(groupKey, durationSeconds) {
+    const res = await safeFetch('/api/admin/reels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ group_key: groupKey, duration_seconds: durationSeconds })
+    }, (err) => `Netzwerkfehler beim Starten des Reels: ${err.message}`);
+
+    const json = await parseJsonSafe(res);
+    if (!res.ok) {
+        throw new Error(json.error || `Reel konnte nicht gestartet werden (HTTP ${res.status}).`);
+    }
+    return json;
+}
+
+/**
+ * Lädt eine Seite der erstellten Trip Reels (neueste zuerst), serverseitig paginiert.
+ * @param {object} [opts]
+ * @param {number} [opts.offset]
+ * @returns {Promise<{reels: Array, total: number, offset: number, limit: number}>}
+ */
+export async function fetchAdminReels({ offset = 0 } = {}) {
+    const params = buildPaginationParams({ offset });
+
+    const res = await safeFetch(`/api/admin/reels?${params.toString()}`, undefined, 'Verbindungsfehler beim Laden der Reels.');
+    if (!res.ok) {
+        throw new Error(`Reels konnten nicht geladen werden (HTTP ${res.status}).`);
+    }
+    return res.json();
+}
+
+/**
+ * Fragt den aktuellen Status eines einzelnen Reel-Jobs ab (fürs Polling während der Erstellung).
+ * @param {number} reelId
+ * @returns {Promise<Object>}
+ */
+export async function fetchReelStatus(reelId) {
+    const res = await safeFetch(`/api/admin/reels/${reelId}`, undefined, 'Verbindungsfehler beim Abfragen des Reel-Status.');
+    if (!res.ok) {
+        throw new Error(`Reel-Status konnte nicht geladen werden (HTTP ${res.status}).`);
+    }
+    return res.json();
+}
+
+/**
+ * URL zum Download eines fertigen Reels - direkter Link (Content-Disposition: attachment
+ * serverseitig), kein Fetch/Player noetig.
+ * @param {number} reelId
+ * @returns {string}
+ */
+export function reelDownloadUrl(reelId) {
+    return `/api/admin/reels/${reelId}/file`;
+}
+
+/**
+ * Löscht einen Reel-Job inklusive generierter Videodatei.
+ * @param {number} reelId
+ * @returns {Promise<void>}
+ */
+export async function deleteReel(reelId) {
+    const res = await safeFetch(`/api/admin/reels/${reelId}`, { method: 'DELETE' },
+        (err) => `Netzwerkfehler beim Löschen: ${err.message}`);
+
+    if (!res.ok) {
+        throw new Error(`Reel konnte nicht gelöscht werden (HTTP ${res.status}).`);
+    }
+}

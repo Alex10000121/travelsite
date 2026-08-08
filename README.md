@@ -95,6 +95,8 @@ Mit `PUBLIC_MODE=1` reicht `http://DEINE-IP:5050/` ohne Token.
 
 ### Lokal ohne Docker
 
+Für die Indexierung von Videos wird zusätzlich `ffmpeg`/`ffprobe` im PATH benötigt (im Docker-Image bereits enthalten).
+
 ```bash
 git clone https://github.com/alex10000121/travelsite.git
 cd travelsite
@@ -139,6 +141,7 @@ TRUSTED_PROXY_COUNT=1
 | `CONTACT_EMAIL`  | `deine.email@beispiel.de` | Wird auf der Login-Seite angezeigt                                  |
 | `PHOTO_DIR`      | `/photos`               | Ordner mit den Original-Fotos                                         |
 | `THUMB_DIR`      | `/data/thumbs`          | Speicherort für generierte Vorschaubilder                             |
+| `REEL_DIR`       | `/data/reels`           | Speicherort für generierte Trip-Reel-Videos (Admin-Bereich)           |
 | `DB_PATH`        | `/data/trips.db`        | Pfad zur SQLite-Datenbank                                             |
 | `FLASK_DEBUG`    | `0`                     | `1` aktiviert Werkzeug-Debugger/Reloader **und** deaktiviert das Secure-Cookie-Flag – nur für lokale Entwicklung |
 | `TRUSTED_PROXY_COUNT` | `1`                | Anzahl vorgeschalteter Reverse-Proxy-Hops, deren `X-Forwarded-For` vertraut wird, um die echte Client-IP zu ermitteln (Rate-Limiting, Admin-Login-Logs, Besucher-Statistik). `0` bei direktem Zugriff ohne Proxy. Muss zur tatsächlichen Proxy-Topologie passen – zu hoch eingestellt lässt sich die IP über den Header fälschen |

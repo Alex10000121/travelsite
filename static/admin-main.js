@@ -4,6 +4,7 @@ import { AdminPhotoManager } from './admin-manage.js';
 import { AdminVisitorStats } from './admin-visitors.js';
 import { AdminRouteManager } from './admin-routes.js';
 import { AdminLog } from './admin-log.js';
+import { AdminReelManager } from './admin-reels.js';
 import { AdminTabs } from './admin-tabs.js';
 
 new AdminTabs({
@@ -54,5 +55,13 @@ new AdminLog({
     searchInput: document.getElementById('admin-log-search'),
     countEl:     document.getElementById('admin-log-count'),
     loadMoreBtn: document.getElementById('admin-log-load-more'),
+});
+
+new AdminReelManager({
+    groupSelect:   document.getElementById('admin-reel-group'),
+    durationInput: document.getElementById('admin-reel-duration'),
+    createBtn:     document.getElementById('admin-reel-create'),
+    list:          document.getElementById('admin-reel-list'),
+    loadMoreBtn:   document.getElementById('admin-reel-load-more'),
 });
 

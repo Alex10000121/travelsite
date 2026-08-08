@@ -1,6 +1,10 @@
 import os
+import random
+import re
 import secrets
 import sqlite3
+import subprocess
+import tempfile
 import threading
 import time
 import math
@@ -8,7 +12,7 @@ import hashlib
 import logging
 import json
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 import requests
@@ -95,6 +99,7 @@ _PUBLIC_MODE = os.environ.get('PUBLIC_MODE', '0') == '1'
 CONFIG = {
     'PHOTO_DIR': os.environ.get('PHOTO_DIR', './photos'),
     'THUMB_DIR': os.environ.get('THUMB_DIR', './data/thumbs'),
+    'REEL_DIR': os.environ.get('REEL_DIR', './data/reels'),
     'DB_PATH': os.environ.get('DB_PATH', './data/trips.db'),
     'PUBLIC_MODE': _PUBLIC_MODE,
     'ACCESS_TOKEN': os.environ.get('ACCESS_TOKEN', '') if _PUBLIC_MODE else _require_env('ACCESS_TOKEN'),
@@ -134,9 +139,15 @@ def file_too_large(e):
     return jsonify(error="Datei zu gross (max. 32 MB)."), 413
 
 
-SUPPORTED_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heic')
+PHOTO_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.heic')
+# Nur die Formate, die Smartphone-Kameras ueblicherweise aufzeichnen - werden nie ueber
+# /api/upload angenommen (siehe upload_photo), sondern nur ueber den Watchdog-Scanner
+# erfasst, wenn sie direkt in PHOTO_DIR abgelegt werden.
+VIDEO_EXTENSIONS = ('.mp4', '.mov', '.m4v')
+SUPPORTED_EXTENSIONS = PHOTO_EXTENSIONS + VIDEO_EXTENSIONS
 
 os.makedirs(CONFIG['THUMB_DIR'], exist_ok=True)
+os.makedirs(CONFIG['REEL_DIR'], exist_ok=True)
 _db_dir = os.path.dirname(CONFIG['DB_PATH'])
 if _db_dir:
     os.makedirs(_db_dir, exist_ok=True)
@@ -456,6 +467,104 @@ def generate_thumbnails(original_path, thumb_path, blur_thumb_path, large_thumb_
         return False
 
 
+VIDEO_METADATA_TIMEOUT = 10
+VIDEO_FRAME_TIMEOUT = 15
+
+_ISO6709_RE = re.compile(r'([+-]\d+\.\d+)([+-]\d+\.\d+)')
+
+
+def _parse_iso6709(location_str):
+    """Parst das ISO-6709-Format, in dem Smartphones GPS-Koordinaten in
+    MP4-Container-Metadaten schreiben (z.B. '+48.8584+002.2945/')."""
+    if not location_str:
+        return None
+    match = _ISO6709_RE.match(location_str.strip())
+    if not match:
+        return None
+    try:
+        lat, lon = float(match.group(1)), float(match.group(2))
+    except ValueError:
+        return None
+    if math.isfinite(lat) and math.isfinite(lon):
+        return (lat, lon)
+    return None
+
+
+def _parse_video_creation_time(value):
+    # ffprobe liefert creation_time als UTC-ISO8601 (mit 'Z') - anders als EXIF
+    # DateTimeOriginal, das keine Zeitzone hat und daher als lokale Zeit behandelt wird.
+    if not value:
+        return None
+    for fmt in ('%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ'):
+        try:
+            return datetime.strptime(value, fmt).replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            continue
+    logger.warning(f"Unparsable video creation_time: {value}")
+    return None
+
+
+def _run_ffprobe_format(video_path):
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', video_path],
+            capture_output=True, text=True, timeout=VIDEO_METADATA_TIMEOUT, check=True,
+        )
+        return json.loads(result.stdout).get('format', {})
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError) as e:
+        logger.warning(f"ffprobe error for {video_path}: {e}")
+        return {}
+
+
+def extract_video_metadata(video_path):
+    """Pendant zu extract_exif_data fuer Videos: liest Aufnahmezeit, GPS-Position und
+    Dauer aus den MP4-Container-Metadaten (Tags 'creation_time' / 'location') via ffprobe,
+    statt EXIF wie bei Fotos."""
+    fmt = _run_ffprobe_format(video_path)
+    tags = fmt.get('tags', {})
+
+    timestamp = _parse_video_creation_time(tags.get('creation_time'))
+    coords = _parse_iso6709(tags.get('location') or tags.get('location-eng'))
+
+    duration = None
+    try:
+        duration = float(fmt['duration'])
+    except (KeyError, TypeError, ValueError):
+        pass
+
+    return timestamp, coords, duration
+
+
+def _extract_video_frame(video_path, frame_path):
+    last_error = None
+    for seek_seconds in ('1', '0'):
+        try:
+            subprocess.run(
+                ['ffmpeg', '-y', '-ss', seek_seconds, '-i', video_path, '-frames:v', '1', frame_path],
+                capture_output=True, timeout=VIDEO_FRAME_TIMEOUT, check=True,
+            )
+            return True
+        except (subprocess.SubprocessError, OSError) as e:
+            last_error = e
+    logger.error(f"Video poster frame extraction error {video_path}: {last_error}")
+    return False
+
+
+def generate_video_poster_thumbnails(video_path, thumb_path, blur_thumb_path, large_thumb_path=None):
+    """Erzeugt fuer Videos dieselben Thumbnail-Varianten wie generate_thumbnails() fuer
+    Fotos: extrahiert per ffmpeg einen Einzelframe in eine Temp-JPEG und laesst diese
+    durch die bestehende PIL-Pipeline laufen, statt die Resize-Logik zu duplizieren."""
+    fd, frame_path = tempfile.mkstemp(suffix='.jpg')
+    os.close(fd)
+    try:
+        if not _extract_video_frame(video_path, frame_path):
+            return False
+        return generate_thumbnails(frame_path, thumb_path, blur_thumb_path, large_thumb_path)
+    finally:
+        if os.path.exists(frame_path):
+            os.remove(frame_path)
+
+
 @contextmanager
 def get_db():
     conn = sqlite3.connect(CONFIG['DB_PATH'], timeout=20)
@@ -513,6 +622,8 @@ def init_db():
             _add_column_if_missing(conn, 'photos', 'is_favorite', 'INTEGER NOT NULL DEFAULT 0')
             _add_column_if_missing(conn, 'photos', 'weather_temp', 'REAL')
             _add_column_if_missing(conn, 'photos', 'weather_code', 'INTEGER')
+            _add_column_if_missing(conn, 'photos', 'media_type', "TEXT NOT NULL DEFAULT 'photo'")
+            _add_column_if_missing(conn, 'photos', 'duration_seconds', 'REAL')
             conn.execute('CREATE TABLE IF NOT EXISTS global_stats (key TEXT PRIMARY KEY, value INTEGER)')
             conn.execute("INSERT OR IGNORE INTO global_stats (key, value) VALUES ('visitor_count', 0)")
             conn.execute('CREATE TABLE IF NOT EXISTS active_sessions (hash TEXT PRIMARY KEY, timestamp REAL)')
@@ -538,6 +649,20 @@ def init_db():
                 )
             ''')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_admin_log_timestamp ON admin_log(timestamp)')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS reels (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_key TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    filename TEXT,
+                    photo_count INTEGER,
+                    video_count INTEGER,
+                    duration_seconds REAL,
+                    error_message TEXT,
+                    created_at REAL NOT NULL,
+                    finished_at REAL
+                )
+            ''')
         logger.info("Database initialized.")
     except Exception as e:
         logger.critical(f"Database init failed: {e}")
@@ -605,11 +730,16 @@ def _move_to_no_gps(full_path, abs_photo_dir):
     logger.info(f"Moved to no_gps: {os.path.basename(dest)}")
 
 
+def _media_type_for(path):
+    return 'video' if path.lower().endswith(VIDEO_EXTENSIONS) else 'photo'
+
+
 def index_photo(full_path, abs_photo_dir):
     if not _is_indexing_candidate(full_path):
         return
 
     rel_path = _relative_photo_path(full_path, abs_photo_dir)
+    media_type = _media_type_for(full_path)
 
     try:
         with get_db() as conn:
@@ -619,7 +749,11 @@ def index_photo(full_path, abs_photo_dir):
             thumb_path = _thumb_path(rel_path)
             blur_thumb_path = _thumb_path(rel_path, '_blur')
 
-            timestamp, coords = extract_exif_data(full_path)
+            if media_type == 'video':
+                timestamp, coords, duration = extract_video_metadata(full_path)
+            else:
+                timestamp, coords = extract_exif_data(full_path)
+                duration = None
 
             if not coords:
                 _move_to_no_gps(full_path, abs_photo_dir)
@@ -630,17 +764,23 @@ def index_photo(full_path, abs_photo_dir):
             final_ts = timestamp or os.path.getmtime(full_path)
             weather_temp, weather_code = fetch_weather(lat, lon, final_ts)
 
-            if not generate_thumbnails(full_path, thumb_path, blur_thumb_path):
+            if media_type == 'video':
+                thumbs_ok = generate_video_poster_thumbnails(full_path, thumb_path, blur_thumb_path)
+            else:
+                thumbs_ok = generate_thumbnails(full_path, thumb_path, blur_thumb_path)
+
+            if not thumbs_ok:
                 logger.error(f"Skipping index (thumbnail generation failed): {full_path}")
                 return
 
             cursor = conn.execute(
-                "INSERT OR IGNORE INTO photos (filename, lat, lon, timestamp, location, weather_temp, weather_code) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (rel_path, lat, lon, final_ts, loc, weather_temp, weather_code)
+                "INSERT OR IGNORE INTO photos "
+                "(filename, lat, lon, timestamp, location, weather_temp, weather_code, media_type, duration_seconds) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (rel_path, lat, lon, final_ts, loc, weather_temp, weather_code, media_type, duration)
             )
             if cursor.rowcount:
-                logger.info(f"Indexed: {rel_path} (GPS: {lat}, {lon})")
+                logger.info(f"Indexed: {rel_path} (GPS: {lat}, {lon}, type: {media_type})")
     except Exception as e:
         logger.error(f"Indexing error for {full_path}: {e}")
 
@@ -771,6 +911,15 @@ def admin_logout():
     return redirect(url_for('admin_dashboard'))
 
 
+def _country_code_from_location(location):
+    """Extrahiert den Laendercode aus dem 'Ort, CC'-Format von get_location_name -
+    einzige Quelle fuer Laendergruppierung, sowohl fuer die Statistik als auch fuer
+    die Trip-Reel-Gruppierung."""
+    if not location or ',' not in location:
+        return None
+    return location.split(',')[-1].strip()
+
+
 @app.route('/api/stats')
 @limiter.limit("30 per minute")
 def api_stats():
@@ -798,11 +947,8 @@ def api_stats():
     ts_first, ts_last = agg['ts_first'], agg['ts_last']
     days = int((ts_last - ts_first) / 86400) + 1 if ts_first and ts_last else 0
 
-    unique_countries = set()
-    for row in loc_rows:
-        loc = row['location']
-        if loc and ',' in loc:
-            unique_countries.add(loc.split(',')[-1].strip())
+    unique_countries = {_country_code_from_location(row['location']) for row in loc_rows}
+    unique_countries.discard(None)
 
     total_km = 0.0
     coords = list(coord_rows)
@@ -1012,7 +1158,7 @@ def upload_photo():
     if 'photo' not in request.files: return jsonify({'error': 'No file'}), 400
     file = request.files['photo']
     if file.filename == '': return jsonify({'error': 'Empty filename'}), 400
-    if not file.filename.lower().endswith(SUPPORTED_EXTENSIONS):
+    if not file.filename.lower().endswith(PHOTO_EXTENSIONS):
         return jsonify({'error': 'Nicht unterstuetztes Dateiformat.'}), 400
 
     form_coords = _resolve_form_coords()
@@ -1369,6 +1515,436 @@ def admin_visitor_stats():
         daily.append({'date': d, 'count': counts_by_date.get(d, 0)})
 
     return jsonify({'total': total, 'active_now': active_now, 'daily': daily})
+
+
+# --- Trip Reel: fasst Fotos/Videos einer Laendergruppe zu einem MP4 zusammen ---
+
+REEL_WIDTH, REEL_HEIGHT, REEL_FPS = 1080, 1920, 30
+# Einheitliche Laenge fuer jedes Segment (Foto oder Video) - macht die Crossfade-Offset-
+# Berechnung in _concat_segments robust, da jedes Segment vorhersagbar lang ist, statt
+# seine tatsaechliche (variable) Laenge erst per ffprobe ermitteln zu muessen.
+SEGMENT_DURATION_SECONDS = 3.0
+CROSSFADE_SECONDS = 0.5
+KEN_BURNS_MAX_ZOOM = 1.15
+# Grenzen fuer die vom Admin waehlbare Ziel-Dauer - deckelt den ffmpeg-Ressourcenverbrauch
+# eines Jobs nach oben, ohne ein winziges Reel fuer eine Handvoll Fotos zu erzwingen.
+MIN_REEL_DURATION_SECONDS = 5
+MAX_REEL_DURATION_SECONDS = 120
+DEFAULT_REEL_DURATION_SECONDS = 30
+FFMPEG_SEGMENT_TIMEOUT = 60
+# Die xfade-Kette re-encodet die gesamte Reel-Laenge (statt reinem Stream-Copy wie zuvor) -
+# deutlich teurer, daher grosszuegiger Timeout.
+FFMPEG_CONCAT_TIMEOUT = 600
+# Debian/Docker-Pfad (siehe Dockerfile: fonts-dejavu-core) - existiert lokal ohne diese
+# Schrift nicht, drawtext wird dann uebersprungen statt zu scheitern (siehe _build_photo_segment).
+REEL_FONT_PATH = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+
+# Nur ein ffmpeg-Job gleichzeitig - die Encodes sind CPU-lastig genug, dass zwei
+# parallele Laeufe den Server spuerbar ausbremsen wuerden.
+_reel_generation_lock = threading.Lock()
+
+
+def _run_ffmpeg(args, timeout):
+    try:
+        subprocess.run(['ffmpeg', '-y', *args], capture_output=True, timeout=timeout, check=True)
+    except FileNotFoundError as e:
+        raise RuntimeError("ffmpeg wurde nicht gefunden. Bitte ffmpeg installieren und sicherstellen, "
+                            "dass es im PATH liegt (im Docker-Image bereits enthalten).") from e
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode('utf-8', errors='replace') if e.stderr else ''
+        raise RuntimeError(f"ffmpeg fehlgeschlagen: {stderr[-500:]}") from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"ffmpeg-Timeout nach {timeout}s") from e
+
+
+def _reel_letterbox_filter(include_fps=True):
+    """Passt das Quellmaterial vollstaendig ins 9:16-Format ein, statt es formatfuellend
+    zuzuschneiden (quer aufgenommene Fotos wuerden sonst links/rechts abgeschnitten).
+    Luecken oben/unten bzw. links/rechts werden mit einem geblurrten, formatfuellenden
+    Hintergrund aus demselben Bild gefuellt - analog zum Blur-Backdrop der Galerie.
+    include_fps=False fuer den Ken-Burns-Pfad (dort setzt zoompan selbst die Ziel-Framerate,
+    siehe _build_photo_segment)."""
+    filt = (
+        "split=2[bg][fg];"
+        f"[bg]scale={REEL_WIDTH}:{REEL_HEIGHT}:force_original_aspect_ratio=increase,"
+        f"crop={REEL_WIDTH}:{REEL_HEIGHT},gblur=sigma=20[bg2];"
+        f"[fg]scale={REEL_WIDTH}:{REEL_HEIGHT}:force_original_aspect_ratio=decrease[fg2];"
+        f"[bg2][fg2]overlay=(W-w)/2:(H-h)/2"
+    )
+    if include_fps:
+        filt += f",fps={REEL_FPS}"
+    return filt
+
+
+def _ken_burns_filter():
+    """Haengt einen langsamen Zoom (zufaellig rein oder raus) mit leicht zufaelligem
+    Fokuspunkt an ein Standbild - macht daraus eine Kamerabewegung statt eines starren
+    Frames. Der Fokuspunkt-Bereich (0.4-0.6) ist bewusst eng gewaehlt, damit der Crop bei
+    KEN_BURNS_MAX_ZOOM garantiert innerhalb des Bildes bleibt (keine Rand-Artefakte).
+
+    Zwei Dinge sind hier bewusst so gewaehlt, weil ffmpegs zoompan sonst sichtbar ruckelt
+    (bekanntes, vielfach dokumentiertes Verhalten): (1) Vorskalieren auf ein Vielfaches der
+    Zielaufloesung gibt der Crop-Positionsberechnung genug Sub-Pixel-Praezision, (2) d=total_frames
+    auf einem EINZELNEN Eingabeframe (statt d=1 auf einem Dauerstream) laesst zoompan die komplette
+    Animation selbst aus einem Bild erzeugen - das ist das in der ffmpeg-Community uebliche,
+    getestete Muster fuer einen ruckelfreien Ken-Burns-Effekt."""
+    total_frames = int(SEGMENT_DURATION_SECONDS * REEL_FPS)
+    rate = (KEN_BURNS_MAX_ZOOM - 1) / total_frames
+    if random.random() < 0.5:
+        z_expr = f"min(1+{rate:.8f}*on,{KEN_BURNS_MAX_ZOOM})"
+    else:
+        z_expr = f"max({KEN_BURNS_MAX_ZOOM}-{rate:.8f}*on,1)"
+    x_frac = random.uniform(0.4, 0.6)
+    y_frac = random.uniform(0.4, 0.6)
+    return (
+        f"scale={REEL_WIDTH * 3}:{REEL_HEIGHT * 3},"
+        f"zoompan=z='{z_expr}':x='iw*{x_frac:.3f}-(iw/zoom/2)':"
+        f"y='ih*{y_frac:.3f}-(ih/zoom/2)':d={total_frames}:s={REEL_WIDTH}x{REEL_HEIGHT}:fps={REEL_FPS}"
+    )
+
+
+def _escape_drawtext(text):
+    """Escaped Text fuer ffmpegs drawtext-Filter (eigene Mini-Sprache, nicht die Shell -
+    subprocess.run bekommt ohnehin eine Argumentliste ohne shell=True). '%' braucht dank
+    expansion=none in _drawtext_filter kein Escaping. Empirisch mit echtem ffmpeg verifiziert."""
+    return (
+        text.replace('\\', '\\\\\\\\')
+            .replace(':', '\\:')
+            .replace("'", '’')
+    )
+
+
+def _drawtext_filter(text):
+    """Blendet Ort/Datum unten links ein. expansion=none deaktiviert ffmpegs eigene
+    %{...}-Textexpansion, dadurch braucht '%' im Text kein Escaping und kann nicht
+    versehentlich als Ausdruck interpretiert werden."""
+    escaped = _escape_drawtext(text)
+    return (
+        f"drawtext=fontfile={REEL_FONT_PATH}:text='{escaped}':expansion=none:"
+        f"fontsize=42:fontcolor=white:borderw=2:bordercolor=black@0.7:x=40:y=h-th-60"
+    )
+
+
+def _reel_overlay_text(item):
+    date_str = datetime.fromtimestamp(item['timestamp']).strftime('%d.%m.%Y') if item['timestamp'] else ''
+    parts = [p for p in (item['location'], date_str) if p]
+    return ' · '.join(parts) if parts else None
+
+
+def _build_photo_segment(source_path, segment_path, overlay_text=None):
+    # Kein '-t' hier: zoompan erzeugt selbst genau total_frames Ausgabeframes aus dem einen
+    # Eingabeframe (siehe _ken_burns_filter), '-frames:v' deckelt die Ausgabe entsprechend -
+    # ohne diesen Deckel wuerde '-loop 1' unbegrenzt weiterlaufen.
+    total_frames = int(SEGMENT_DURATION_SECONDS * REEL_FPS)
+    filters = [_reel_letterbox_filter(include_fps=False), _ken_burns_filter()]
+    if overlay_text and os.path.exists(REEL_FONT_PATH):
+        filters.append(_drawtext_filter(overlay_text))
+    _run_ffmpeg(
+        ['-loop', '1', '-i', source_path,
+         '-filter_complex', ','.join(filters), '-frames:v', str(total_frames),
+         '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', segment_path],
+        timeout=FFMPEG_SEGMENT_TIMEOUT,
+    )
+
+
+def _build_video_segment(source_path, segment_path, overlay_text=None):
+    # tpad friert das letzte Bild ein, falls der Quellclip kuerzer als SEGMENT_DURATION_SECONDS
+    # ist (stop_duration absichtlich sehr hoch - das nachfolgende -t schneidet exakt ab, ohne
+    # dass die Quelllaenge vorher per ffprobe bekannt sein muss). Empirisch verifiziert.
+    filters = ['tpad=stop_mode=clone:stop_duration=9999', _reel_letterbox_filter()]
+    if overlay_text and os.path.exists(REEL_FONT_PATH):
+        filters.append(_drawtext_filter(overlay_text))
+    _run_ffmpeg(
+        ['-i', source_path, '-t', str(SEGMENT_DURATION_SECONDS),
+         '-filter_complex', ','.join(filters), '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', segment_path],
+        timeout=FFMPEG_SEGMENT_TIMEOUT,
+    )
+
+
+def _concat_segments(segment_paths, segment_durations, output_path):
+    """Fuegt Segmente per xfade-Filterkette ueberblendend zusammen (statt hartem Schnitt).
+    Erfordert Re-Encoding (kein Stream-Copy mehr moeglich) - der Offset fuer die t-te
+    Ueberblendung wird kumulativ berechnet (robust auch bei unterschiedlich langen Segmenten).
+    Empirisch mit mehreren Testclips verifiziert (Gesamtdauer und tatsaechliche Blendung)."""
+    if len(segment_paths) == 1:
+        _run_ffmpeg(['-i', segment_paths[0], '-c', 'copy', output_path], timeout=FFMPEG_CONCAT_TIMEOUT)
+        return
+
+    inputs = []
+    for path in segment_paths:
+        inputs += ['-i', path]
+
+    filter_parts = []
+    cumulative = segment_durations[0]
+    prev_label = '0:v'
+    last_index = len(segment_paths) - 1
+    for i in range(1, len(segment_paths)):
+        offset = cumulative - CROSSFADE_SECONDS
+        out_label = 'vout' if i == last_index else f'v{i}'
+        filter_parts.append(
+            f"[{prev_label}][{i}:v]xfade=transition=fade:duration={CROSSFADE_SECONDS}:offset={offset:.3f}[{out_label}]"
+        )
+        cumulative += segment_durations[i] - CROSSFADE_SECONDS
+        prev_label = out_label
+
+    _run_ffmpeg(
+        [*inputs, '-filter_complex', ';'.join(filter_parts), '-map', '[vout]',
+         '-c:v', 'libx264', '-pix_fmt', 'yuv420p', output_path],
+        timeout=FFMPEG_CONCAT_TIMEOUT,
+    )
+
+
+def _sample_randomly(items, count):
+    """Waehlt count Eintraege zufaellig aus einer chronologisch sortierten Liste, behaelt
+    aber deren urspruengliche (chronologische) Reihenfolge bei - das Reel zeigt also eine
+    zufaellige Auswahl der Reise, aber in der richtigen zeitlichen Abfolge."""
+    if len(items) <= count:
+        return items
+    chosen_indices = sorted(random.sample(range(len(items)), count))
+    return [items[i] for i in chosen_indices]
+
+
+def _segment_count_for_duration(target_duration_seconds, available_count):
+    """Grobe Schaetzung anhand der einheitlichen Segmentdauer. Die tatsaechliche Dauer
+    wird nach der Erzeugung ueber ffprobe exakt bestimmt und angezeigt."""
+    estimated = max(1, round(target_duration_seconds / SEGMENT_DURATION_SECONDS))
+    return min(estimated, available_count)
+
+
+def _distinct_group_keys(conn):
+    rows = conn.execute(
+        "SELECT DISTINCT location FROM photos WHERE location IS NOT NULL AND location != ''"
+    ).fetchall()
+    keys = {_country_code_from_location(r['location']) for r in rows}
+    keys.discard(None)
+    return keys
+
+
+def _generate_reel(reel_id, group_key, target_duration_seconds):
+    try:
+        with get_db() as conn:
+            conn.execute("UPDATE reels SET status='running' WHERE id=?", (reel_id,))
+            rows = conn.execute(
+                "SELECT filename, media_type, location, timestamp FROM photos "
+                "WHERE location IS NOT NULL AND location != '' ORDER BY timestamp ASC"
+            ).fetchall()
+
+        items = [r for r in rows if _country_code_from_location(r['location']) == group_key]
+        segment_count = _segment_count_for_duration(target_duration_seconds, len(items))
+        items = _sample_randomly(items, segment_count)
+
+        if not items:
+            raise RuntimeError("Keine Fotos/Videos fuer diese Gruppe gefunden.")
+
+        photo_count = sum(1 for i in items if i['media_type'] != 'video')
+        video_count = sum(1 for i in items if i['media_type'] == 'video')
+
+        abs_photo_dir = os.path.abspath(CONFIG['PHOTO_DIR'])
+        output_filename = f"{group_key}_{int(time.time())}.mp4"
+        output_path = os.path.join(os.path.abspath(CONFIG['REEL_DIR']), output_filename)
+
+        with tempfile.TemporaryDirectory(prefix=f"reel_{reel_id}_") as tmp_dir:
+            segment_paths = []
+            for idx, item in enumerate(items):
+                source_path = os.path.join(abs_photo_dir, item['filename'])
+                segment_path = os.path.join(tmp_dir, f"seg_{idx:03d}.mp4")
+                overlay_text = _reel_overlay_text(item)
+                if item['media_type'] == 'video':
+                    _build_video_segment(source_path, segment_path, overlay_text)
+                else:
+                    _build_photo_segment(source_path, segment_path, overlay_text)
+                segment_paths.append(segment_path)
+
+            segment_durations = [SEGMENT_DURATION_SECONDS] * len(segment_paths)
+            _concat_segments(segment_paths, segment_durations, output_path)
+
+        final_format = _run_ffprobe_format(output_path)
+        try:
+            duration = float(final_format['duration'])
+        except (KeyError, TypeError, ValueError):
+            duration = None
+
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE reels SET status='done', filename=?, photo_count=?, video_count=?, "
+                "duration_seconds=?, finished_at=? WHERE id=?",
+                (output_filename, photo_count, video_count, duration, time.time(), reel_id)
+            )
+        logger.info(f"Reel generated: {output_filename} ({len(items)} Segmente)")
+        _log_admin_action('generate_reel_done', f"{group_key} ({len(items)} Segmente)")
+
+    except Exception as e:
+        logger.error(f"Reel generation error (id={reel_id}, group={group_key}): {e}")
+        try:
+            with get_db() as conn:
+                conn.execute(
+                    "UPDATE reels SET status='error', error_message=?, finished_at=? WHERE id=?",
+                    (str(e), time.time(), reel_id)
+                )
+        except Exception as log_err:
+            logger.error(f"Reel error-state write failed: {log_err}")
+        _log_admin_action('generate_reel_error', f"{group_key}: {e}")
+    finally:
+        _reel_generation_lock.release()
+
+
+ADMIN_REELS_PAGE_SIZE = 20
+REEL_FIELDS = ("id, group_key, status, filename, photo_count, video_count, "
+               "duration_seconds, error_message, created_at, finished_at")
+
+
+@app.route('/api/admin/reels/groups')
+@admin_required
+def admin_reel_groups():
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT location, media_type FROM photos WHERE location IS NOT NULL AND location != ''"
+            ).fetchall()
+    except Exception as e:
+        logger.error(f"Reel groups query error: {e}")
+        return jsonify({'error': 'DB Error'}), 500
+
+    counts = {}
+    for row in rows:
+        group_key = _country_code_from_location(row['location'])
+        if not group_key:
+            continue
+        entry = counts.setdefault(group_key, {'group_key': group_key, 'photo_count': 0, 'video_count': 0})
+        if row['media_type'] == 'video':
+            entry['video_count'] += 1
+        else:
+            entry['photo_count'] += 1
+
+    groups = sorted(counts.values(), key=lambda g: g['group_key'])
+    return jsonify({'groups': groups})
+
+
+@app.route('/api/admin/reels', methods=['POST'])
+@admin_required
+@limiter.limit("5 per minute")
+def create_reel():
+    data = request.get_json(silent=True) or {}
+    group_key = data.get('group_key')
+    if not isinstance(group_key, str) or not group_key.strip():
+        return jsonify({'error': 'group_key fehlt'}), 400
+    group_key = group_key.strip()
+
+    duration_seconds = data.get('duration_seconds', DEFAULT_REEL_DURATION_SECONDS)
+    try:
+        duration_seconds = float(duration_seconds)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'duration_seconds muss eine Zahl sein'}), 400
+    if not (MIN_REEL_DURATION_SECONDS <= duration_seconds <= MAX_REEL_DURATION_SECONDS):
+        return jsonify({'error': f'duration_seconds muss zwischen {MIN_REEL_DURATION_SECONDS} '
+                                  f'und {MAX_REEL_DURATION_SECONDS} liegen'}), 400
+
+    try:
+        with get_db() as conn:
+            valid_keys = _distinct_group_keys(conn)
+    except Exception as e:
+        logger.error(f"Reel group validation error: {e}")
+        return jsonify({'error': 'DB Error'}), 500
+
+    if group_key not in valid_keys:
+        return jsonify({'error': 'Unbekannte Gruppe'}), 400
+
+    if not _reel_generation_lock.acquire(blocking=False):
+        return jsonify({'error': 'Es laeuft bereits eine Reel-Generierung. Bitte warten.'}), 409
+
+    try:
+        with get_db() as conn:
+            cursor = conn.execute(
+                "INSERT INTO reels (group_key, status, created_at) VALUES (?, 'pending', ?)",
+                (group_key, time.time())
+            )
+            reel_id = cursor.lastrowid
+    except Exception as e:
+        _reel_generation_lock.release()
+        logger.error(f"Reel job creation error: {e}")
+        return jsonify({'error': 'Reel konnte nicht gestartet werden.'}), 500
+
+    threading.Thread(target=_generate_reel, args=(reel_id, group_key, duration_seconds), daemon=True).start()
+    _log_admin_action('generate_reel_start', f"{group_key} (Ziel: {duration_seconds:.0f}s)")
+
+    return jsonify({'success': True, 'reel_id': reel_id}), 202
+
+
+@app.route('/api/admin/reels')
+@admin_required
+def admin_list_reels():
+    offset = _parse_offset()
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                f"SELECT {REEL_FIELDS} FROM reels ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (ADMIN_REELS_PAGE_SIZE, offset)
+            ).fetchall()
+            total = conn.execute("SELECT COUNT(*) as cnt FROM reels").fetchone()['cnt']
+    except Exception as e:
+        logger.error(f"Admin reel list error: {e}")
+        return jsonify({'error': 'DB Error'}), 500
+
+    return jsonify({'reels': [dict(r) for r in rows], 'total': total, 'offset': offset, 'limit': ADMIN_REELS_PAGE_SIZE})
+
+
+@app.route('/api/admin/reels/<int:reel_id>')
+@admin_required
+def admin_get_reel(reel_id):
+    try:
+        with get_db() as conn:
+            row = conn.execute(f"SELECT {REEL_FIELDS} FROM reels WHERE id=?", (reel_id,)).fetchone()
+    except Exception as e:
+        logger.error(f"Admin reel status error: {e}")
+        return jsonify({'error': 'DB Error'}), 500
+
+    if not row:
+        abort(404)
+    return jsonify(dict(row))
+
+
+@app.route('/api/admin/reels/<int:reel_id>/file')
+@admin_required
+def admin_download_reel(reel_id):
+    try:
+        with get_db() as conn:
+            row = conn.execute("SELECT status, filename FROM reels WHERE id=?", (reel_id,)).fetchone()
+    except Exception as e:
+        logger.error(f"Admin reel download error: {e}")
+        return jsonify({'error': 'DB Error'}), 500
+
+    if not row or row['status'] != 'done' or not row['filename']:
+        abort(404)
+
+    base_dir = os.path.abspath(CONFIG['REEL_DIR'])
+    file_path = os.path.abspath(os.path.join(base_dir, row['filename']))
+    if not _is_within_dir(base_dir, file_path) or not os.path.exists(file_path):
+        abort(404)
+
+    return send_file(file_path, as_attachment=True, download_name=row['filename'])
+
+
+@app.route('/api/admin/reels/<int:reel_id>', methods=['DELETE'])
+@admin_required
+def admin_delete_reel(reel_id):
+    try:
+        with get_db() as conn:
+            row = conn.execute("SELECT filename FROM reels WHERE id=?", (reel_id,)).fetchone()
+            if not row:
+                return jsonify({'error': 'Nicht gefunden'}), 404
+            conn.execute("DELETE FROM reels WHERE id=?", (reel_id,))
+    except Exception as e:
+        logger.error(f"Admin reel delete error: {e}")
+        return jsonify({'error': 'Reel konnte nicht geloescht werden.'}), 500
+
+    if row['filename']:
+        base_dir = os.path.abspath(CONFIG['REEL_DIR'])
+        file_path = os.path.abspath(os.path.join(base_dir, row['filename']))
+        if _is_within_dir(base_dir, file_path) and os.path.exists(file_path):
+            os.remove(file_path)
+
+    _log_admin_action('delete_reel', str(reel_id))
+    return jsonify({'success': True})
 
 
 def start_background_services():
