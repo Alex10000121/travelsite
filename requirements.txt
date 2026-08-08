@@ -2,6 +2,7 @@ Flask
 Flask-Compress
 Flask-Limiter
 Pillow
+pillow-heif
 reverse_geocoder
 gunicorn
 werkzeug

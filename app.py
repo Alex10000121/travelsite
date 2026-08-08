@@ -27,6 +27,7 @@ from flask_limiter.util import get_remote_address
 from werkzeug.middleware.proxy_fix import ProxyFix
 from PIL import Image, ImageOps
 from PIL.ExifTags import GPSTAGS
+from pillow_heif import register_heif_opener
 import reverse_geocoder as rg
 from werkzeug.utils import secure_filename
 from watchdog.observers import Observer
@@ -35,6 +36,10 @@ import piexif
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Ohne diesen Aufruf kann Pillow .heic nicht oeffnen - der Scanner wuerde iPhone-Fotos
+# trotz gueltigem GPS als "kein GPS" einstufen und nach no_gps/ verschieben.
+register_heif_opener()
 
 app = Flask(__name__)
 Compress(app)
@@ -109,10 +114,17 @@ CONFIG = {
 }
 
 
+def _tokens_match(provided, expected):
+    # Auf str wirft compare_digest bei Nicht-ASCII einen TypeError - ein Umlaut im
+    # Token (aus der Query oder aus der .env) wuerde sonst einen 500er ausloesen
+    # statt eines 403. Auf Bytes gilt die Einschraenkung nicht.
+    return secrets.compare_digest(provided.encode('utf-8'), expected.encode('utf-8'))
+
+
 def _access_granted(token):
     if CONFIG['PUBLIC_MODE']:
         return True
-    return secrets.compare_digest(token, CONFIG['ACCESS_TOKEN'])
+    return _tokens_match(token, CONFIG['ACCESS_TOKEN'])
 
 
 def _viewer_access_granted(token):
@@ -893,7 +905,7 @@ def admin_dashboard():
 def admin_login():
     data = request.get_json(silent=True) or {}
     token = data.get('admin_token', '')
-    if isinstance(token, str) and secrets.compare_digest(token, CONFIG['ADMIN_TOKEN']):
+    if isinstance(token, str) and _tokens_match(token, CONFIG['ADMIN_TOKEN']):
         session.clear()
         session['is_admin'] = True
         session.permanent = True
@@ -1350,10 +1362,20 @@ def admin_delete_photo(filename):
         with get_db() as conn:
             conn.execute("DELETE FROM photos WHERE filename = ?", (filename,))
             conn.execute("DELETE FROM routes WHERE start_filename = ? OR end_filename = ?", (filename, filename))
+            # Muss vor dem Commit passieren: scheitert das Loeschen, rollt get_db die
+            # DB-Zeile zurueck. Andernfalls bliebe die Datei liegen und initial_scan
+            # wuerde sie beim naechsten Start als neues Foto wieder aufnehmen.
+            if os.path.exists(requested_path):
+                os.remove(requested_path)
 
-        for path in (requested_path, _thumb_path(filename), _thumb_path(filename, '_blur'), _thumb_path(filename, '_lg')):
-            if os.path.exists(path):
-                os.remove(path)
+        for path in (_thumb_path(filename), _thumb_path(filename, '_blur'), _thumb_path(filename, '_lg')):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError as e:
+                # Thumbnails sind jederzeit neu erzeugbar - ein Fehler hier darf weder
+                # den Request scheitern lassen noch die restlichen Dateien ueberspringen.
+                logger.warning(f"Thumbnail {path} konnte nicht geloescht werden: {e}")
 
         logger.info(f"Deleted photo: {filename}")
         _log_admin_action('delete_photo', filename)

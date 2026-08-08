@@ -44,4 +44,12 @@ EXPOSE 5000
 
 USER appuser
 
-CMD ["sh", "-c", "python -c 'import app; app.init_db()' && python -c 'import app; app.start_background_services(); import time; time.sleep(31536000)' & gunicorn -w 3 -b 0.0.0.0:5000 app:app"]
+# Reihenfolge ist wichtig: "A && B & gunicorn" wuerde in sh als "(A && B) &" plus
+# parallel dazu gunicorn geparst - der Webserver startet dann vor init_db() und
+# beantwortet die ersten Requests mit "no such table". Der Watcher laeuft als
+# eigener Hintergrundprozess, gunicorn per exec als PID 1 (saubere Signale).
+#
+# -w 1: der Reel-Lock (threading.Lock) und das Rate-Limiting (storage_uri memory://)
+# sind prozesslokal und waeren mit mehreren Workern wirkungslos. Threads statt
+# Prozesse, weil die App I/O-gebunden ist (SQLite, ffmpeg als Subprozess).
+CMD ["sh", "-c", "python -c 'import app; app.init_db()' && (python -c 'import app; app.start_background_services(); import threading; threading.Event().wait()' &) && exec gunicorn -w 1 --threads 8 -b 0.0.0.0:5000 app:app"]

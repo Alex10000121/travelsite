@@ -83,6 +83,7 @@ export class MapController {
         this._spinFrame          = null;
         this._isFlying           = false;
         this._spinOnNextMoveEnd  = false;
+        this._spinCancelHandler  = null;
         this._initialCenter = [options.center?.[1] ?? 10, options.center?.[0] ?? 50];
         this._initialZoom   = options.zoom ?? 6;
         this._resizeHandler = () => this._map?.resize();
@@ -530,15 +531,14 @@ export class MapController {
         const degreesPerFrame = 0.3;
         let rotated = 0;
 
-        const cancel = () => this._cancelSpin();
-        this._map.once('dragstart', cancel);
-        this._map.once('zoomstart', cancel);
+        this._spinCancelHandler = () => this._cancelSpin();
+        this._map.once('dragstart', this._spinCancelHandler);
+        this._map.once('zoomstart', this._spinCancelHandler);
 
         const spin = () => {
             if (rotated >= 360) {
                 this._map.setBearing(0);
-                this._map.off('dragstart', cancel);
-                this._map.off('zoomstart', cancel);
+                this._removeSpinCancelHandlers();
                 this._spinFrame = null;
                 return;
             }
@@ -550,16 +550,34 @@ export class MapController {
         this._spinFrame = requestAnimationFrame(spin);
     }
 
+    _removeSpinCancelHandlers() {
+        if (!this._spinCancelHandler) return;
+        this._map.off('dragstart', this._spinCancelHandler);
+        this._map.off('zoomstart', this._spinCancelHandler);
+        this._spinCancelHandler = null;
+    }
+
     _cancelSpin() {
         if (this._spinFrame !== null) {
             cancelAnimationFrame(this._spinFrame);
             this._spinFrame = null;
         }
+        // Bleiben die Abbruch-Listener registriert, loest das flyTo des naechsten
+        // Markers sie aus und setzt _isFlying zurueck - der Folge-Spin faellt dann aus.
+        this._removeSpinCancelHandlers();
         this._isFlying = false;
     }
 
     set onMarkerClick(fn) { this._onMarkerClick = fn; }
     set onMapClick(fn)    { this._onMapClick    = fn; }
+
+    /**
+     * Noetig, wenn der Container aus display:none eingeblendet wird: die Karte laeuft
+     * mit trackResize:false und haette sonst dauerhaft die Groesse 0x0.
+     */
+    resize() {
+        this._map?.resize();
+    }
 
     /**
      * Blendet alle Foto-/Cluster-Pins ein oder aus (Route-Linie bleibt sichtbar).

@@ -77,6 +77,13 @@ class TestIndexRoute:
         assert response.status_code == 200
         assert b'login' not in response.data.lower()
 
+    def test_non_ascii_token_returns_login_page_not_500(self, client):
+        # compare_digest wirft auf str mit Nicht-ASCII einen TypeError - der darf
+        # nicht als 500 durchschlagen (per Query von jedem Besucher ausloesbar).
+        response = client.get('/?token=%C3%BC')
+        assert response.status_code == 200
+        assert b'login' in response.data.lower()
+
 
 class TestApiRoute:
     def test_valid_token_returns_json(self, client):
@@ -157,6 +164,12 @@ class TestAdminLogin:
 
     def test_wrong_content_type_returns_403_not_415(self, client):
         response = client.post('/admin/login', data='not json')
+        assert response.status_code == 403
+
+    def test_non_ascii_admin_token_returns_403_not_500(self, client):
+        response = client.post('/admin/login',
+                               data=json.dumps({'admin_token': 'pässwort'}),
+                               content_type='application/json')
         assert response.status_code == 403
 
 
@@ -686,6 +699,45 @@ class TestAdminDeletePhoto:
 
         assert not os.path.exists(photo_path)
         assert not os.path.exists(thumb_path)
+
+        with get_db() as conn:
+            row = conn.execute("SELECT 1 FROM photos WHERE filename=?", (uploaded_file,)).fetchone()
+        assert row is None
+
+    def test_failed_file_removal_keeps_db_row(self, admin_client, app):
+        """Sonst waere die DB-Zeile weg, die Datei aber noch da - initial_scan wuerde
+        das geloeschte Foto beim naechsten Start wieder aufnehmen."""
+        from app import get_db
+
+        uploaded_file = self._upload(admin_client, name='undeletable.jpg')
+
+        with patch('app.os.remove', side_effect=OSError('permission denied')):
+            response = admin_client.delete(f'/api/admin/photos/{uploaded_file}')
+
+        assert response.status_code == 500
+
+        with get_db() as conn:
+            row = conn.execute("SELECT 1 FROM photos WHERE filename=?", (uploaded_file,)).fetchone()
+        assert row is not None
+
+    def test_thumbnail_removal_failure_does_not_fail_request(self, admin_client, app):
+        import app as flask_module
+        from app import get_db
+
+        uploaded_file = self._upload(admin_client, name='thumb_locked.jpg')
+        photo_path = os.path.join(flask_module.CONFIG['PHOTO_DIR'], uploaded_file)
+        real_remove = flask_module.os.remove
+
+        def fail_on_thumbs(path):
+            if path == photo_path:
+                return real_remove(path)
+            raise OSError('locked')
+
+        with patch('app.os.remove', side_effect=fail_on_thumbs):
+            response = admin_client.delete(f'/api/admin/photos/{uploaded_file}')
+
+        assert response.status_code == 200
+        assert not os.path.exists(photo_path)
 
         with get_db() as conn:
             row = conn.execute("SELECT 1 FROM photos WHERE filename=?", (uploaded_file,)).fetchone()

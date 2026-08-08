@@ -9,6 +9,7 @@ import { AdminUploadCard } from '../../static/admin-upload.js';
 function makeMockMap() {
     return {
         getCenter:          vi.fn(() => ({ lat: 50, lon: 10 })),
+        resize:             vi.fn(),
         setFixMarker:       vi.fn(),
         removeFixMarker:    vi.fn(),
         hasFixMarker:       vi.fn(() => true),
@@ -62,6 +63,8 @@ describe('_pickLocation / _confirmGpsPick', () => {
 
         expect(card._dom.gpsPicker.style.display).toBe('block');
         expect(map.setFixMarker).toHaveBeenCalledWith(48.0, 11.0);
+        // Ohne resize() bliebe die Karte 0x0, weil der Container aus display:none kommt.
+        expect(map.resize).toHaveBeenCalled();
     });
 
     it('löst das Promise mit den bestätigten Koordinaten auf', async () => {

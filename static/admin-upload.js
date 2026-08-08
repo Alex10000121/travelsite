@@ -33,6 +33,7 @@ export class AdminUploadCard {
         return new Promise((resolve) => {
             this._locationPickResolve = resolve;
             if (this._dom.gpsPicker) this._dom.gpsPicker.style.display = 'block';
+            this._map.resize();
             const center = this._map.getCenter();
             this._map.setFixMarker(center.lat, center.lon);
         });
