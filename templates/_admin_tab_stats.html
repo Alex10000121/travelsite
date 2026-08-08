@@ -10,7 +10,13 @@
 
     <p class="admin-hint">Besuche der letzten 30 Tage</p>
     <div class="visitor-chart-wrap">
-        <div id="admin-visitor-chart" class="visitor-chart"></div>
+        <div class="visitor-chart-body">
+            <div id="admin-visitor-yaxis" class="visitor-chart-yaxis" aria-hidden="true"></div>
+            <div class="visitor-chart-plot">
+                <div id="admin-visitor-chart" class="visitor-chart"></div>
+                <div id="admin-visitor-xaxis" class="visitor-chart-xaxis" aria-hidden="true"></div>
+            </div>
+        </div>
         <div id="admin-visitor-tooltip" class="visitor-tooltip" style="display:none;">
             <span class="visitor-tooltip-date"></span>
             <strong class="visitor-tooltip-count"></strong>

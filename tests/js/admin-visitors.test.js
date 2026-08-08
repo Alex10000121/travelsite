@@ -98,6 +98,8 @@ function makeDom() {
         totalEl:        document.createElement('span'),
         activeEl:       document.createElement('span'),
         chartContainer: document.createElement('div'),
+        yAxis:          document.createElement('div'),
+        xAxis:          document.createElement('div'),
         tooltip:        document.createElement('div'),
     };
 }
@@ -130,6 +132,30 @@ describe('AdminVisitorStats', () => {
         expect(dom.chartContainer.querySelector('.visitor-chart-area')).not.toBeNull();
     });
 
+    it('beschriftet die Y-Achse mit Maximum, Hälfte und 0', async () => {
+        const { dom } = await loadVisitorStats({ total: 42, active_now: 3, daily: DAILY });
+
+        const labels = [...dom.yAxis.children].map(el => el.textContent);
+        expect(labels).toEqual(['10', '5', '0']);
+    });
+
+    it('beschriftet die X-Achse mit Datumsangaben aus den Tagesdaten', async () => {
+        const { dom } = await loadVisitorStats({ total: 42, active_now: 3, daily: DAILY });
+
+        const labels = [...dom.xAxis.children].map(el => el.textContent);
+        expect(labels).toEqual(['01.07.', '02.07.', '03.07.']);
+    });
+
+    it('begrenzt die X-Achsen-Beschriftung auf maximal 5 Labels bei vielen Tagen', async () => {
+        const daily = Array.from({ length: 30 }, (_, i) => ({
+            date: `2026-07-${String(i + 1).padStart(2, '0')}`,
+            count: i,
+        }));
+        const { dom } = await loadVisitorStats({ total: 1, active_now: 0, daily });
+
+        expect(dom.xAxis.children).toHaveLength(5);
+    });
+
     it('zeigt einen Alert, wenn das Laden fehlschlägt', async () => {
         fetchVisitorStats.mockRejectedValue(new Error('Netzwerkfehler'));
         const stats = new AdminVisitorStats(makeDom());
@@ -138,9 +164,11 @@ describe('AdminVisitorStats', () => {
         expect(alert).toHaveBeenCalledWith('Netzwerkfehler');
     });
 
-    it('lässt den Chart-Container leer, wenn keine Tagesdaten vorliegen', async () => {
+    it('lässt Chart-Container und Achsen leer, wenn keine Tagesdaten vorliegen', async () => {
         const { dom } = await loadVisitorStats({ total: 0, active_now: 0, daily: [] });
 
         expect(dom.chartContainer.querySelector('svg')).toBeNull();
+        expect(dom.yAxis.children).toHaveLength(0);
+        expect(dom.xAxis.children).toHaveLength(0);
     });
 });

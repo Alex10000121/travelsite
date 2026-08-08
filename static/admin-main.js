@@ -42,6 +42,8 @@ new AdminVisitorStats({
     totalEl:        document.getElementById('admin-visitor-total'),
     activeEl:       document.getElementById('admin-visitor-active'),
     chartContainer: document.getElementById('admin-visitor-chart'),
+    yAxis:          document.getElementById('admin-visitor-yaxis'),
+    xAxis:          document.getElementById('admin-visitor-xaxis'),
     tooltip:        document.getElementById('admin-visitor-tooltip'),
 });
 

@@ -83,6 +83,8 @@ export class AdminVisitorStats {
      * @param {HTMLElement} dom.totalEl
      * @param {HTMLElement} dom.activeEl
      * @param {HTMLElement} dom.chartContainer - Element, in das das SVG eingehängt wird
+     * @param {HTMLElement} [dom.yAxis] - Element für die Y-Achsen-Beschriftung (Besuche)
+     * @param {HTMLElement} [dom.xAxis] - Element für die X-Achsen-Beschriftung (Datum)
      * @param {HTMLElement} dom.tooltip
      */
     constructor(dom) {
@@ -103,8 +105,41 @@ export class AdminVisitorStats {
         if (totalEl) totalEl.textContent = stats.total ?? 0;
         if (activeEl) activeEl.textContent = stats.active_now ?? 0;
 
-        this._points = buildChartPoints(stats.daily || []);
+        const daily = stats.daily || [];
+        this._points = buildChartPoints(daily);
         this._renderChart();
+        this._renderYAxis(daily);
+        this._renderXAxis(daily);
+    }
+
+    _renderYAxis(daily) {
+        const { yAxis } = this._dom;
+        if (!yAxis) return;
+        yAxis.innerHTML = '';
+        if (daily.length === 0) return;
+
+        const maxCount = Math.max(1, ...daily.map(d => d.count));
+        [maxCount, Math.round(maxCount / 2), 0].forEach((value) => {
+            const span = document.createElement('span');
+            span.textContent = String(value);
+            yAxis.appendChild(span);
+        });
+    }
+
+    _renderXAxis(daily) {
+        const { xAxis } = this._dom;
+        if (!xAxis) return;
+        xAxis.innerHTML = '';
+        if (daily.length === 0) return;
+
+        const labelCount = Math.min(5, daily.length);
+        const step = (daily.length - 1) / (labelCount - 1 || 1);
+        for (let i = 0; i < labelCount; i++) {
+            const idx = Math.round(i * step);
+            const span = document.createElement('span');
+            span.textContent = formatDayLabel(daily[idx].date);
+            xAxis.appendChild(span);
+        }
     }
 
     _renderChart() {
@@ -201,16 +236,19 @@ export class AdminVisitorStats {
     }
 
     _showTooltip(point, chartRect) {
-        const { tooltip, chartContainer } = this._dom;
-        if (!tooltip || !chartContainer) return;
+        const { tooltip } = this._dom;
+        if (!tooltip) return;
 
         tooltip.querySelector('.visitor-tooltip-date').textContent = formatDayLabel(point.date);
         tooltip.querySelector('.visitor-tooltip-count').textContent =
             `${point.count} ${point.count === 1 ? 'Besuch' : 'Besuche'}`;
 
-        const containerRect = chartContainer.getBoundingClientRect();
+        // Position relativ zum offsetParent (dem position:relative-Wrapper, an dem das
+        // Tooltip-CSS "left" tatsaechlich ausrichtet) - nicht relativ zum Chart-Container,
+        // der seit der Y-Achsen-Spalte nicht mehr an dessen linker Kante beginnt.
+        const wrapRect = (tooltip.offsetParent || tooltip.parentElement).getBoundingClientRect();
         const scaleX = chartRect.width / CHART_WIDTH;
-        const left = chartRect.left - containerRect.left + point.x * scaleX;
+        const left = chartRect.left - wrapRect.left + point.x * scaleX;
 
         tooltip.style.display = 'block';
         tooltip.style.left = `${left}px`;

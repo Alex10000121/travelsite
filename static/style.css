@@ -396,8 +396,8 @@ body.admin-page { overflow-y: auto; }
 .admin-back-btn, .admin-logout-btn { background: rgba(255,255,255,0.08); color: var(--text-main); border: 1px solid var(--overlay-medium); padding: 10px 20px; border-radius: 30px; cursor: pointer; font-size: 0.9rem; text-decoration: none; display: inline-flex; align-items: center; }
 .admin-back-btn:hover, .admin-logout-btn:hover { background: var(--overlay-medium); }
 
-.admin-tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--overlay-soft); }
-.admin-tab { background: none; border: none; color: var(--text-muted); padding: 10px 18px; font-size: 0.95rem; cursor: pointer; border-bottom: 2px solid transparent; }
+.admin-tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--overlay-soft); overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.admin-tab { background: none; border: none; color: var(--text-muted); padding: 10px 18px; font-size: 0.95rem; cursor: pointer; border-bottom: 2px solid transparent; flex-shrink: 0; }
 .admin-tab:hover { color: var(--text-main); }
 .admin-tab.active { color: var(--text-main); border-bottom-color: var(--accent-color); font-weight: 600; }
 
@@ -537,6 +537,14 @@ select.admin-search-input::picker(select) { border-radius: 14px; overflow: hidde
 .admin-visitor-stats { margin-bottom: 4px; }
 
 .visitor-chart-wrap { position: relative; margin-top: 10px; }
+.visitor-chart-body { display: flex; gap: 8px; }
+.visitor-chart-yaxis {
+    display: flex; flex-direction: column; justify-content: space-between;
+    flex: 0 0 auto; width: 26px; padding: 16px 0 0;
+    font-size: 0.7rem; color: var(--text-muted); text-align: right;
+}
+.visitor-chart-plot { flex: 1 1 auto; min-width: 0; }
+.visitor-chart-xaxis { display: flex; justify-content: space-between; margin-top: 4px; font-size: 0.7rem; color: var(--text-muted); }
 .visitor-chart { width: 100%; height: 160px; }
 .visitor-chart-svg { width: 100%; height: 100%; display: block; }
 
@@ -574,4 +582,14 @@ select.admin-search-input::picker(select) { border-radius: 14px; overflow: hidde
 
     /* Navigation via Swipe statt Buttons auf Mobile */
     .nav-btn { display: none !important; }
+
+    /* Admin-Bereich: ohne diese Anpassungen erzwingen die 320px-Mindestbreite von
+       .admin-grid und die feste Breite der Tab-Leiste horizontales Scrollen der ganzen
+       Seite - die Besucherzahlen-Box wandert dabei aus dem sichtbaren Bereich. */
+    .admin-container { padding: 20px 12px 40px; }
+    .admin-card { padding: 18px; }
+    .admin-grid { grid-template-columns: 1fr; gap: 14px; }
+    .admin-header h1 { font-size: 1.3rem; }
+    .stats-grid { gap: 10px; }
+    .stat-value { font-size: 1.3rem; }
 }
