@@ -126,6 +126,7 @@ DB_PATH=./data/trips.db
 CONTACT_EMAIL=deine@email.de
 MAPTILER_API_KEY=dein-maptiler-key
 FLASK_DEBUG=0
+TRUSTED_PROXY_COUNT=1
 ```
 
 | Variable         | Standardwert            | Beschreibung                                                          |
@@ -140,6 +141,7 @@ FLASK_DEBUG=0
 | `THUMB_DIR`      | `/data/thumbs`          | Speicherort für generierte Vorschaubilder                             |
 | `DB_PATH`        | `/data/trips.db`        | Pfad zur SQLite-Datenbank                                             |
 | `FLASK_DEBUG`    | `0`                     | `1` aktiviert Werkzeug-Debugger/Reloader **und** deaktiviert das Secure-Cookie-Flag – nur für lokale Entwicklung |
+| `TRUSTED_PROXY_COUNT` | `1`                | Anzahl vorgeschalteter Reverse-Proxy-Hops, deren `X-Forwarded-For` vertraut wird, um die echte Client-IP zu ermitteln (Rate-Limiting, Admin-Login-Logs, Besucher-Statistik). `0` bei direktem Zugriff ohne Proxy. Muss zur tatsächlichen Proxy-Topologie passen – zu hoch eingestellt lässt sich die IP über den Header fälschen |
 
 > **MapTiler API-Key**: Einen kostenlosen Key gibt es unter [maptiler.com](https://www.maptiler.com/). Ohne Key läuft die Karte als 2D-OpenStreetMap ohne Terrain und 3D-Gebäude.
 

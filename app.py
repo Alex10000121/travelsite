@@ -20,6 +20,7 @@ from flask import Flask, render_template, request, jsonify, send_file, make_resp
 from flask_compress import Compress
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
 from PIL import Image, ImageOps
 from PIL.ExifTags import GPSTAGS
 import reverse_geocoder as rg
@@ -33,6 +34,14 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 Compress(app)
+
+# Ohne diese Middleware liefert request.remote_addr die Adresse des Reverse
+# Proxys statt der echten Client-IP (betrifft Rate-Limiting, Admin-Login-Logs
+# und den Besucher-Hash). TRUSTED_PROXY_COUNT muss zur Anzahl der tatsaechlich
+# vorgeschalteten Proxy-Hops passen, sonst laesst sich X-Forwarded-For faelschen.
+_TRUSTED_PROXY_COUNT = int(os.environ.get('TRUSTED_PROXY_COUNT', '1'))
+if _TRUSTED_PROXY_COUNT > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_TRUSTED_PROXY_COUNT)
 
 # Nur ueber FLASK_DEBUG=1 aktivierbar (siehe .env) - steuert den
 # Werkzeug-Reloader/Debugger (app.run unten). SESSION_COOKIE_SECURE haengt
