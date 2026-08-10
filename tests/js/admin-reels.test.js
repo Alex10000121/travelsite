@@ -63,7 +63,7 @@ describe('Länder-Dropdown', () => {
         const options = mgr._dom.groupSelect.querySelectorAll('option');
         expect(options).toHaveLength(2);
         expect(options[0].value).toBe('DE');
-        expect(options[0].textContent).toBe('DE (12 Fotos, 2 Videos)');
+        expect(options[0].textContent).toBe('Deutschland (12 Fotos, 2 Videos)');
         expect(mgr._dom.groupSelect.disabled).toBe(false);
     });
 
@@ -71,7 +71,7 @@ describe('Länder-Dropdown', () => {
         const mgr = await loadedManager(emptyPage(), [{ group_key: 'FR', photo_count: 3, video_count: 0 }]);
 
         const option = mgr._dom.groupSelect.querySelector('option');
-        expect(option.textContent).toBe('FR (3 Fotos)');
+        expect(option.textContent).toBe('Frankreich (3 Fotos)');
     });
 
     it('deaktiviert das Dropdown, wenn keine Gruppen vorhanden sind', async () => {

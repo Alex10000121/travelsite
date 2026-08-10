@@ -1266,6 +1266,17 @@ class TestReelGroups:
         assert response.status_code == 200
         assert response.get_json()['groups'] == []
 
+    def test_groups_ordered_chronologically_by_earliest_photo(self, admin_client, app):
+        from app import get_db
+        with get_db() as conn:
+            _insert_photo(conn, 'p1.jpg', location='Paris, FR', timestamp=1700000200.0)
+            _insert_photo(conn, 'p2.jpg', location='München, DE', timestamp=1700000100.0)
+            _insert_photo(conn, 'p3.jpg', location='Rome, IT', timestamp=1700000300.0)
+
+        response = admin_client.get('/api/admin/reels/groups')
+        group_keys = [g['group_key'] for g in response.get_json()['groups']]
+        assert group_keys == ['DE', 'FR', 'IT']
+
 
 class TestCreateReel:
     def test_without_admin_session_returns_403(self, client):

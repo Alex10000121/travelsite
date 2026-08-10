@@ -1821,13 +1821,14 @@ def admin_reel_groups():
     try:
         with get_db() as conn:
             rows = conn.execute(
-                "SELECT location, media_type FROM photos WHERE location IS NOT NULL AND location != ''"
+                "SELECT location, media_type, timestamp FROM photos WHERE location IS NOT NULL AND location != ''"
             ).fetchall()
     except Exception as e:
         logger.error(f"Reel groups query error: {e}")
         return jsonify({'error': 'DB Error'}), 500
 
     counts = {}
+    first_seen = {}
     for row in rows:
         group_key = _country_code_from_location(row['location'])
         if not group_key:
@@ -1837,8 +1838,11 @@ def admin_reel_groups():
             entry['video_count'] += 1
         else:
             entry['photo_count'] += 1
+        ts = row['timestamp']
+        if ts is not None and (group_key not in first_seen or ts < first_seen[group_key]):
+            first_seen[group_key] = ts
 
-    groups = sorted(counts.values(), key=lambda g: g['group_key'])
+    groups = sorted(counts.values(), key=lambda g: first_seen.get(g['group_key'], float('inf')))
     return jsonify({'groups': groups})
 
 

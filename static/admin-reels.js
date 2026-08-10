@@ -16,6 +16,17 @@ const STATUS_LABELS = {
 const REEL_POLL_INTERVAL_MS = 3000;
 const DEFAULT_REEL_DURATION_SECONDS = 30;
 
+let regionNames = null;
+try { regionNames = new Intl.DisplayNames(['de'], { type: 'region' }); } catch (_) { /* alter Browser */ }
+
+function countryName(code) {
+    try {
+        return regionNames?.of(code) || code;
+    } catch (_) {
+        return code;
+    }
+}
+
 export class AdminReelManager {
 
     /**
@@ -72,9 +83,10 @@ export class AdminReelManager {
     // den meisten Nutzern ist die Videoanzahl also immer 0. "0 Videos" staendig
     // anzuzeigen wirkt wie ein kaputtes Feature statt wie ein optionaler Hinweis.
     _describeGroup(g) {
+        const name = countryName(g.group_key);
         return g.video_count > 0
-            ? `${g.group_key} (${g.photo_count} Fotos, ${g.video_count} Videos)`
-            : `${g.group_key} (${g.photo_count} Fotos)`;
+            ? `${name} (${g.photo_count} Fotos, ${g.video_count} Videos)`
+            : `${name} (${g.photo_count} Fotos)`;
     }
 
     async _handleCreate() {
